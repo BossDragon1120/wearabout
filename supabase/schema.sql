@@ -1,4 +1,4 @@
--- Fit Check database setup.
+-- WearAbout database setup.
 -- Paste this whole file into Supabase > SQL Editor > New query, then click Run.
 -- Safe to run once on a new project.
 

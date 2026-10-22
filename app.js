@@ -1,4 +1,4 @@
-// Fit Check — standalone web app (GitHub Pages + Supabase + Photoroom + Claude).
+// WearAbout — standalone web app (GitHub Pages + Supabase + Photoroom + Claude).
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 
@@ -124,7 +124,7 @@ function streakInfo(){
 function render(){
   const m=$("#main"), signedIn=!!S.uid;
   $("#appbar").hidden=!signedIn;
-  if(!CONFIGURED){ m.innerHTML=`<div class="auth"><div class="mark">Fit <span>Check</span></div><div class="note">Almost there. Add your Supabase address and key to <b>config.js</b> (see the README), then reload.</div></div>`; return; }
+  if(!CONFIGURED){ m.innerHTML=`<div class="auth"><div class="mark">Wear<span>About</span></div><div class="note">Almost there. Add your Supabase address and key to <b>config.js</b> (see the README), then reload.</div></div>`; return; }
   if(!signedIn){ m.innerHTML=viewAuth(); return; }
   renderTabs();
   const v=S.view;
@@ -146,7 +146,7 @@ function renderTabs(){
 function viewAuth(){
   const a=S.auth;
   return `<form class="auth" id="authForm" novalidate>
-    <div class="mark">Fit <span>Check</span></div>
+    <div class="mark">Wear<span>About</span></div>
     <p class="lead">Snap your outfit, get one sharp styling note, and keep your streak going.</p>
     ${a.step==="email" ? `
       <div class="field"><label for="authEmail">Email</label>
@@ -193,7 +193,7 @@ function viewHome(){
     </div>`;
   const list=S.fits.filter(x=>(!f.cat||x.category===f.cat)&&(!f.best||(x.score??0)>=BEST));
   if(!S.loaded) out+=`<div class="note plain" style="margin-top:22px">Loading your fits…</div>`;
-  else if(!S.fits.length) out+=`<div class="empty" style="margin-top:22px"><b>No fits yet</b><p class="small muted">Snap what you're wearing. Fit Check guesses the occasion, puts you on a fresh backdrop, scores it, and suggests one tweak and maybe one buy.</p></div>`;
+  else if(!S.fits.length) out+=`<div class="empty" style="margin-top:22px"><b>No fits yet</b><p class="small muted">Snap what you're wearing. WearAbout guesses the occasion, puts you on a fresh backdrop, scores it, and suggests one tweak and maybe one buy.</p></div>`;
   else if(!list.length) out+=`<div class="empty" style="margin-top:22px"><p class="small muted">No fits match ${f.best?"Best":""}${f.best&&f.cat?" + ":""}${esc(f.cat||"")} yet.</p></div>`;
   else out+=`<div class="grid" style="margin-top:16px">${list.map(x=>{ const d=longDate(x.created_at); return `<button class="card" data-act="openFit" data-id="${esc(x.id)}">
       <img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit, ${esc(d)}" loading="lazy">
@@ -237,7 +237,7 @@ function bgTile(key,label){
 }
 async function startFlow(file){
   if(!file) return;
-  let img; try { img=await loadImage(URL.createObjectURL(file)); } catch { toast("That file isn't a photo Fit Check can read."); return; }
+  let img; try { img=await loadImage(URL.createObjectURL(file)); } catch { toast("That file isn't a photo WearAbout can read."); return; }
   const origBlob=await toBlob(scaled(img,1600),"image/jpeg",.88), origUrl=URL.createObjectURL(origBlob), b64=await base64(origBlob);
   const f={step:"occasion", origBlob, origUrl, b64, guess:null, guessConf:null, guessing:true, guessErr:null, cat:null, detail:"",
     analysis:null, analysisErr:"", comps:{}, compState:{}, bg:null, bgErr:"", saving:false};

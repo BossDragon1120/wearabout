@@ -1,4 +1,4 @@
-// Fit Check: style-fit
+// WearAbout: style-fit
 // Uses Claude to guess the occasion, then score the outfit, write one tweak and (maybe) one buy rec, and list items.
 // Request (POST JSON, signed-in user):
 //   { action: "guess",   image: <base64 JPEG> }                      -> { category, confidence }
@@ -26,7 +26,7 @@ Choose exactly one category from this list: ${CATS.join(", ")}.
 If the photo doesn't clearly suggest one, still pick the closest and mark confidence "low".
 Reply with only JSON: {"category":"<one category from the list, spelled exactly>","confidence":"high"|"medium"|"low"}`;
 
-const analyzePrompt = (cat: string, detail: string) => `You are the stylist inside Fit Check, an outfit-logging app. The photo shows the user's outfit. They are dressed for: ${cat}${detail ? ` (${detail})` : ""}.
+const analyzePrompt = (cat: string, detail: string) => `You are the stylist inside WearAbout, an outfit-logging app. The photo shows the user's outfit. They are dressed for: ${cat}${detail ? ` (${detail})` : ""}.
 
 Rules you must follow:
 1. Never make things up. Name a brand or model only when a visible logo or an unmistakable design makes you confident; otherwise describe the item by color, material and garment type. If you can't tell something, leave it out. A wrong guess is worse than not knowing.

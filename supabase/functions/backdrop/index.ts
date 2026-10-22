@@ -1,4 +1,4 @@
-// Fit Check: backdrop
+// WearAbout: backdrop
 // Cuts the person out of an outfit photo and places them on a studio or themed background with Photoroom.
 // Request (POST JSON, signed-in user): { mode: "studio" | "themed", image: <base64 JPEG>, category, detail }
 // Response: the finished image (PNG or JPEG bytes), 1080x1440.

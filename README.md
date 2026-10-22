@@ -1,4 +1,4 @@
-# Fit Check
+# WearAbout
 
 Snap your outfit, say where you're going, and get it back on a clean studio or themed backdrop with a style score, one tweak and (only when it's worth it) one buy rec. Keep a daily streak and share fits with mutual friends.
 
@@ -17,7 +17,7 @@ Your Photoroom and Anthropic keys live only in Supabase's server functions, neve
 3. **Authentication → Sign In / Providers → Email**: make sure Email is enabled. Turn **Confirm email** on.
 4. **Authentication → Emails → Magic Link** template: replace the body with the code version below so people get a 6-digit code (codes work inside the home-screen app; links would open Safari instead).
    ```html
-   <h2>Your Fit Check code</h2>
+   <h2>Your WearAbout code</h2>
    <p>Enter this code in the app: <strong>{{ .Token }}</strong></p>
    ```
    Do the same for the **Confirm signup** template.

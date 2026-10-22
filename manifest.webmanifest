@@ -1,6 +1,6 @@
 {
-  "name": "Fit Check",
-  "short_name": "Fit Check",
+  "name": "WearAbout",
+  "short_name": "WearAbout",
   "description": "Log your daily outfit, get a style score and one sharp rec, keep your streak.",
   "start_url": "./",
   "scope": "./",
