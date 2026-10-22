@@ -10,6 +10,10 @@ const sb = CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 /* ---------- constants ---------- */
 const CATS = ["Beach/Resort","Travel Day","Active/Workout","Casual/Hangout","Errands","WFH","Office","Work Event","Get Fancy","Night Out","Festival"];
 const DIMS = [["occasion_fit","Occasion fit",.30],["cohesion","Cohesion",.20],["proportion","Proportion & fit",.20],["color","Color",.20],["details","Finishing details",.10]];
+const DIMS_GOAL = [["occasion_fit","Occasion fit",.25],["cohesion","Cohesion",.20],["proportion","Proportion & fit",.20],["color","Color",.15],["details","Finishing details",.10],["goal","Your goal",.10]];
+const dimsFor = goal => goal ? DIMS_GOAL : DIMS;
+const BADGES = [["Nailed the occasion","🎯"],["Color play","🎨"],["Great proportions","📐"],["Texture mix","🧶"],["Statement piece","✨"],["Polished details","💎"],["Tonal dressing","🤍"],["Pattern mixing","🌀"],["On goal","🏆"]];
+const badgeIcon = n => (BADGES.find(b=>b[0]===n)||[,"🏅"])[1];
 const ITEM_TYPES = ["top","bottom","dress","jacket","outerwear","shoes","bag","belt","hat","scarf","eyewear","other"];
 const BEST = 8;
 const CAT_EMOJI = {"Beach/Resort":"🏖️","Travel Day":"✈️","Active/Workout":"🏃","Casual/Hangout":"☕","Errands":"🛍️","WFH":"🏠","Office":"💼","Work Event":"🎤","Get Fancy":"🥂","Night Out":"🌙","Festival":"🎪"};
@@ -31,7 +35,7 @@ const S = {
   profile:null, fits:[], recs:[], out:new Set(), inc:new Set(), people:{}, posts:[], hearts:{},
   urls:{},
   view:"home", filter:{cat:null,best:false},
-  flow:null, fitId:null, share:null, confirmDel:false, friendMsg:"", codeIn:"", handleIn:null,
+  flow:null, fitId:null, share:null, confirmDel:false, friendMsg:"", codeIn:"", handleIn:null, goal:"", goalEdit:false, goalIn:null,
   auth:{step:"email", email:"", code:"", busy:false, msg:""},
 };
 
@@ -88,12 +92,13 @@ async function callFn(name, payload, asBlob=false){
   return asBlob ? res.blob() : res.json();
 }
 async function loadMine(){
-  const [f,r,p] = await Promise.all([
+  const [f,r,p,g] = await Promise.all([
     sb.from("fits").select("*").order("created_at",{ascending:false}).limit(1000),
     sb.from("saved_recs").select("*").order("created_at",{ascending:false}),
     sb.from("profiles").select("*").eq("id",S.uid).maybeSingle(),
+    sb.from("user_settings").select("style_goal").eq("user_id",S.uid).maybeSingle(),
   ]);
-  S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null;
+  S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null; S.goal=(g.data&&g.data.style_goal)||"";
   await signUrls("fits", S.fits.map(x=>x.thumb_path));
 }
 async function loadSocial(){
@@ -181,12 +186,20 @@ async function submitAuth(){
 }
 
 /* --- home --- */
+const badgeChips = list => (list&&list.length) ? `<div class="badges">${list.map(n=>`<span class="bdg">${badgeIcon(n)} ${esc(n)}</span>`).join("")}</div>` : "";
+function goalRow(){
+  if(S.goalEdit) return `<div class="goalrow editing"><label for="goalIn" class="small" style="font-weight:600">Your style goal</label>
+    <div class="row" style="flex-wrap:nowrap"><input class="input" id="goalIn" maxlength="40" value="${esc(S.goalIn ?? S.goal)}" placeholder="e.g. more executive, sportier, more color"><button class="btn sm primary" data-act="saveGoal">Save</button></div>
+    <p class="small muted">Counts for 10% of each new fit's score.${S.goal?` <button class="link small" data-act="clearGoal">Remove goal</button>`:""}</p></div>`;
+  return `<div class="goalrow">🧭 <span>${S.goal?`Style goal: <b>${esc(S.goal)}</b>`:"Add a style goal to your score"}</span><button class="link small" data-act="editGoal">${S.goal?"Edit":"Set one"}</button></div>`;
+}
 function viewHome(){
   const st=streakInfo(), f=S.filter;
   const title = st.n ? `🔥 ${st.n}-day streak` : "Log today's fit";
   const sub = st.loggedToday ? "Today's fit is in. Add another anytime." : st.n ? "Keep your streak alive — what are you wearing?" : "Start your streak — what are you wearing?";
   let out=`<button class="logbanner" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
     <div class="countrow"><span class="count">${S.fits.length}</span><span class="countlbl">Outfit${S.fits.length===1?"":"s"} logged</span></div>
+    ${goalRow()}
     <div class="chips" role="toolbar" aria-label="Filters" style="margin-top:12px">
       <button class="chip best ${f.best?"on":""}" data-act="filterBest" aria-pressed="${f.best}">⭐ Best</button>
       ${CATS.map(c=>`<button class="chip ${f.cat===c?"on":""}" data-act="filterCat" data-cat="${esc(c)}" aria-pressed="${f.cat===c}">${TAG_SVG}${esc(c)}</button>`).join("")}
@@ -197,7 +210,7 @@ function viewHome(){
   else if(!list.length) out+=`<div class="empty" style="margin-top:22px"><p class="small muted">No fits match ${f.best?"Best":""}${f.best&&f.cat?" + ":""}${esc(f.cat||"")} yet.</p></div>`;
   else out+=`<div class="grid" style="margin-top:16px">${list.map(x=>{ const d=longDate(x.created_at); return `<button class="card" data-act="openFit" data-id="${esc(x.id)}">
       <img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit, ${esc(d)}" loading="lazy">
-      <span class="cbody"><span class="cdate">${esc(d)}</span><span class="pills">${x.score!=null?`<span class="spill">⭐ ${fmtScore(x.score)}/10</span>`:""}<span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span></span></span></button>`; }).join("")}</div>`;
+      <span class="cbody"><span class="cdate">${esc(d)}</span><span class="pills">${x.score!=null?`<span class="spill">⭐ ${fmtScore(x.score)}/10</span>`:""}<span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span>${(x.analysis?.badges||[]).length?`<span class="bpill" title="${esc(x.analysis.badges.join(", "))}">${x.analysis.badges.map(badgeIcon).join("")}</span>`:""}</span></span></button>`; }).join("")}</div>`;
   return out;
 }
 
@@ -267,7 +280,7 @@ function runStyle(){
 }
 async function runAnalysis(f){
   f.analysis="loading"; if(S.flow===f) render();
-  try { f.analysis=await callFn("style-fit",{action:"analyze", image:f.b64, category:f.cat, detail:f.detail}); }
+  try { f.analysis=await callFn("style-fit",{action:"analyze", image:f.b64, category:f.cat, detail:f.detail, goal:S.goal||""}); }
   catch(e){ f.analysis={score:null}; f.analysisErr=e.message; }
   if(S.flow===f && S.view==="flow") render();
 }
@@ -280,7 +293,7 @@ async function saveFit(){
     await Promise.all([up(base+".jpg",main), up(base+"-thumb.jpg",thumb), up(base+"-orig.jpg",f.origBlob)]);
     const row={id, local_date:localDate(), category:f.cat, detail:f.detail||"", bg_choice:f.bg,
       image_path:base+".jpg", thumb_path:base+"-thumb.jpg", orig_path:base+"-orig.jpg",
-      score:a?a.score:null, analysis:a?{dims:a.dims,low:a.low,review:a.review,tweak:a.tweak,buy:a.buy}:null, items:a?a.items:[]};
+      score:a?a.score:null, analysis:a?{dims:a.dims,low:a.low,review:a.review,tweak:a.tweak,buy:a.buy,badges:a.badges||[],goal:a.goal||""}:null, items:a?a.items:[]};
     const { data, error } = await sb.from("fits").insert(row).select().single();
     if(error) throw error;
     S.urls["fits:"+row.image_path]=f.comps[f.bg].url; S.urls["fits:"+row.thumb_path]=URL.createObjectURL(thumb);
@@ -299,8 +312,9 @@ function viewFit(){
     <div class="row"><span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}${x.detail?" · "+esc(x.detail):""}</span><span class="spacer"></span><span class="small muted">${new Date(x.created_at).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}</span></div>`;
   if(x.score!=null && an){
     out+=`<div class="scoreRow"><div class="score">${fmtScore(x.score)}<small>/10</small></div><div class="small muted" style="padding-bottom:6px">${x.score>=BEST?"⭐ In your Best fits":"Style score for "+esc(x.category)}<br>Only you see this.</div></div>
+      ${badgeChips(an.badges)}
       ${an.review?`<p class="review">${esc(an.review)}</p>`:""}
-      <div class="dims">${DIMS.map(([k,label,w])=>{ const d=an.dims[k]; return `<div class="dim ${an.low===k?"low":""}"><div class="lbl"><span>${label}<em>${Math.round(w*100)}%</em></span><span>${Number(d.score).toFixed(1)}</span></div><div class="bar"><i style="width:${d.score*10}%"></i></div>${d.note?`<p>${esc(d.note)}</p>`:""}</div>`; }).join("")}</div>
+      <div class="dims">${dimsFor(an.goal).map(([k,label,w])=>{ const d=an.dims[k]; if(!d) return ""; if(k==="goal") label="Your goal: "+esc(an.goal); return `<div class="dim ${an.low===k?"low":""}"><div class="lbl"><span>${label}<em>${Math.round(w*100)}%</em></span><span>${Number(d.score).toFixed(1)}</span></div><div class="bar"><i style="width:${d.score*10}%"></i></div>${d.note?`<p>${esc(d.note)}</p>`:""}</div>`; }).join("")}</div>
       <div class="stack" style="gap:12px"><h3>Level it up</h3>
         ${an.tweak?recCard("tweak","Tweak",an.tweak.title,an.tweak.detail,fb.tweak):""}
         ${an.buy?recCard("buy","Buy",an.buy.item,an.buy.why,fb.buy):`<div class="rec"><span class="kind">Buy</span><b>No need to buy anything for this look!</b></div>`}
@@ -393,7 +407,7 @@ async function postShare(){
     drawShare(); const blob=await toBlob($("#shareCanvas"),"image/jpeg",.85);
     const id=crypto.randomUUID(), path=`${S.uid}/${id}.jpg`;
     const u=await sb.storage.from("posts").upload(path,blob,{contentType:"image/jpeg"}); if(u.error) throw u.error;
-    const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:x.detail||"", caption:sh.caption.slice(0,140), plugs, image_path:path});
+    const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:x.detail||"", caption:sh.caption.slice(0,140), plugs, badges:(x.analysis&&x.analysis.badges)||[], image_path:path});
     if(error) throw error;
     S.urls["posts:"+path]=URL.createObjectURL(blob);
     S.share=null; S.view="feed"; await loadSocial(); render(); scrollTo(0,0); toast("Posted to friends");
@@ -411,6 +425,7 @@ function viewFeed(){
       <div style="min-width:0"><b>${esc(name)}</b><div class="small muted">${CAT_EMOJI[p.category]||""} ${esc(p.category)}${p.detail?" · "+esc(p.detail):""} · ${esc(ago(p.created_at))}</div></div></div>
       <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
       <div class="body">${p.caption?`<p>${esc(p.caption)}</p>`:""}
+      ${badgeChips(p.badges)}
       ${(p.plugs||[]).map(g=>`<div class="plugcard"><b class="small">${esc(g.label)}</b>${g.review?`<span class="small">${esc(g.review)}</span>`:""}${safeUrl(g.link)?`<a href="${esc(safeUrl(g.link))}" target="_blank" rel="noopener noreferrer">Shop it</a>`:""}</div>`).join("")}
       <div class="row"><button class="heart ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}">${h.mine?ICON.heartFill:ICON.heart}${h.count||""}</button><span class="spacer"></span>
       ${p.user_id===S.uid?`<button class="link small" data-act="removePost" data-id="${esc(p.id)}">Remove post</button>`:""}</div></div></article>`;
@@ -516,6 +531,11 @@ const ACT = {
     render(); },
   addBack:async t=>{ try{ await addFriend(t.dataset.uid); toast("You're now friends"); }catch{ toast("Couldn't add them back."); } render(); },
   signOut:async()=>{ await sb.auth.signOut(); },
+  editGoal:()=>{ S.goalEdit=true; S.goalIn=null; render(); setTimeout(()=>$("#goalIn")?.focus(),0); },
+  saveGoal:async()=>{ const goal=String(S.goalIn ?? S.goal).trim().slice(0,40);
+    const { error } = await sb.from("user_settings").upsert({user_id:S.uid, style_goal:goal, updated_at:new Date().toISOString()});
+    if(error){ toast("Couldn't save your goal."); return; } S.goal=goal; S.goalEdit=false; render(); toast(goal?"Style goal saved":"Style goal removed"); },
+  clearGoal:async()=>{ S.goalIn=""; await ACT.saveGoal(); },
   authBack:()=>{ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); },
 };
 document.addEventListener("click", e=>{
@@ -535,6 +555,7 @@ document.addEventListener("input", e=>{
   else if(t.id==="blurSize"&&S.share){ S.share.blur.r=Number(t.value)/100; drawShare(); }
   else if(t.id==="codeIn") S.codeIn=t.value;
   else if(t.id==="handleIn") S.handleIn=t.value;
+  else if(t.id==="goalIn") S.goalIn=t.value;
 });
 document.addEventListener("change", e=>{
   const t=e.target;

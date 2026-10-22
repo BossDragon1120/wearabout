@@ -19,6 +19,10 @@ const json = (status: number, body: unknown) =>
 const CATS = ["Beach/Resort", "Travel Day", "Active/Workout", "Casual/Hangout", "Errands", "WFH", "Office",
   "Work Event", "Get Fancy", "Night Out", "Festival"];
 const DIMS: [string, number][] = [["occasion_fit", .30], ["cohesion", .20], ["proportion", .20], ["color", .20], ["details", .10]];
+// With a personal style goal, the goal takes 10%: 5 points from occasion fit and 5 from color.
+const DIMS_GOAL: [string, number][] = [["occasion_fit", .25], ["cohesion", .20], ["proportion", .20], ["color", .15], ["details", .10], ["goal", .10]];
+const BADGES = ["Nailed the occasion", "Color play", "Great proportions", "Texture mix", "Statement piece", "Polished details", "Tonal dressing", "Pattern mixing", "On goal"];
+const badgeNames = (goal: string) => BADGES.filter((n) => goal || n !== "On goal");
 const ITEM_TYPES = ["top", "bottom", "dress", "jacket", "outerwear", "shoes", "bag", "belt", "hat", "scarf", "eyewear", "other"];
 
 const guessPrompt = () => `This photo shows a person's outfit. Guess what occasion they are dressed for, based only on the clothing you can see.
@@ -26,7 +30,7 @@ Choose exactly one category from this list: ${CATS.join(", ")}.
 If the photo doesn't clearly suggest one, still pick the closest and mark confidence "low".
 Reply with only JSON: {"category":"<one category from the list, spelled exactly>","confidence":"high"|"medium"|"low"}`;
 
-const analyzePrompt = (cat: string, detail: string) => `You are the stylist inside WearAbout, an outfit-logging app. The photo shows the user's outfit. They are dressed for: ${cat}${detail ? ` (${detail})` : ""}.
+const analyzePrompt = (cat: string, detail: string, goal: string) => `You are the stylist inside WearAbout, an outfit-logging app. The photo shows the user's outfit. They are dressed for: ${cat}${detail ? ` (${detail})` : ""}.
 
 Rules you must follow:
 1. Never make things up. Name a brand or model only when a visible logo or an unmistakable design makes you confident; otherwise describe the item by color, material and garment type. If you can't tell something, leave it out. A wrong guess is worse than not knowing.
@@ -39,15 +43,17 @@ Score each dimension from 1 to 10 (one decimal allowed), with a note of at most 
 - proportion: silhouette, lengths and volumes balance; garments fit well
 - color: the palette works together and with the wearer
 - details: accessories, shoes, grooming and polish
-
+${goal ? `- goal: how well the outfit moves toward the user's own style goal, "${goal}"
+` : ""}
 "tweak": one change using things they likely already own (styling, tucking, cuffing, swapping a piece, layering, hair). It must improve the lowest-scoring dimension. "title" at most 8 words, "detail" at most 30 words, "dimension" is that dimension's key.
 "buy": null, or {"item": the kind of item, described specifically without inventing a brand, "why": at most 25 words, "search": a 3-7 word Google search for it}.
 "review": one or two warm, specific sentences on what works.
+"badges": 0 to 3 badges from this exact list, only when clearly earned (many outfits earn none): ${badgeNames(goal).join(", ")}.${goal ? ` "On goal" means the outfit clearly delivers on "${goal}".` : ""}
 "items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")} (use "jacket" for jackets, blazers, shackets and cardigans worn open; "outerwear" for coats, parkas and puffers), "brand": a string only if you are confident, else null}.
 If no outfit is visible, reply {"error":"<short reason>"} instead.
 
 Reply with only JSON in this shape:
-{"dims":{"occasion_fit":{"score":8,"note":"..."},"cohesion":{"score":7.5,"note":"..."},"proportion":{"score":7,"note":"..."},"color":{"score":8,"note":"..."},"details":{"score":6.5,"note":"..."}},"review":"...","tweak":{"title":"...","detail":"...","dimension":"details"},"buy":null,"items":[{"label":"...","type":"top","brand":null}]}`;
+{"dims":{"occasion_fit":{"score":8,"note":"..."},"cohesion":{"score":7.5,"note":"..."},"proportion":{"score":7,"note":"..."},"color":{"score":8,"note":"..."},"details":{"score":6.5,"note":"..."}${goal ? ',"goal":{"score":7,"note":"..."}' : ""}},"review":"...","badges":[],"tweak":{"title":"...","detail":"...","dimension":"details"},"buy":null,"items":[{"label":"...","type":"top","brand":null}]}`;
 
 function parseJson(text: string) {
   try { return JSON.parse(text); } catch { /* fall through */ }
@@ -62,11 +68,11 @@ const clamp = (n: number, a: number, b: number) => Math.min(b, Math.max(a, n));
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // deno-lint-ignore no-explicit-any
-function normalize(a: any) {
+function normalize(a: any, goal: string) {
   if (!a || typeof a !== "object" || a.error || !a.dims) throw new Error(a?.error ? String(a.error) : "No outfit found");
   const dims: Record<string, { score: number; note: string }> = {};
   let total = 0, low = "";
-  for (const [k, w] of DIMS) {
+  for (const [k, w] of (goal ? DIMS_GOAL : DIMS)) {
     const d = a.dims[k] ?? {};
     const sc = clamp(Number(d.score) || 5, 1, 10);
     dims[k] = { score: round1(sc), note: String(d.note ?? "").slice(0, 160) };
@@ -80,7 +86,9 @@ function normalize(a: any) {
   const items = Array.isArray(a.items) ? a.items.filter((i: any) => i && i.label).slice(0, 20).map((i: any) => ({
     label: String(i.label).slice(0, 80), type: ITEM_TYPES.includes(i.type) ? i.type : "other", brand: i.brand ? String(i.brand).slice(0, 40) : null,
   })) : [];
-  return { score: round1(total), dims, low, review: String(a.review ?? "").slice(0, 320), tweak, buy, items };
+  const names = badgeNames(goal);
+  const badges = Array.isArray(a.badges) ? [...new Set(a.badges.map(String).filter((n: string) => names.includes(n)))].slice(0, 3) : [];
+  return { score: round1(total), dims, low, review: String(a.review ?? "").slice(0, 320), tweak, buy, items, badges, goal };
 }
 
 async function askClaude(key: string, model: string, image: string, prompt: string, maxTokens: number) {
@@ -115,7 +123,7 @@ Deno.serve(async (req) => {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   if (!key) return json(500, { error: "Claude isn't set up yet (missing ANTHROPIC_API_KEY)." });
 
-  let body: { action?: string; image?: string; category?: string; detail?: string };
+  let body: { action?: string; image?: string; category?: string; detail?: string; goal?: string };
   try { body = await req.json(); } catch { return json(400, { error: "Bad request." }); }
   if (!body.image || body.image.length > 8_000_000) return json(400, { error: "Missing or oversized photo." });
 
@@ -137,8 +145,9 @@ Deno.serve(async (req) => {
     }
     const cat = CATS.includes(String(body.category)) ? String(body.category) : "Casual/Hangout";
     const detail = String(body.detail ?? "").slice(0, 60);
-    const text = await askClaude(key, model, body.image, analyzePrompt(cat, detail), 2000);
-    return json(200, normalize(parseJson(text)));
+    const goal = String(body.goal ?? "").replace(/["\n]/g, " ").trim().slice(0, 40);
+    const text = await askClaude(key, model, body.image, analyzePrompt(cat, detail, goal), 2000);
+    return json(200, normalize(parseJson(text), goal));
   } catch (e) {
     const status = (e as { status?: number }).status;
     if (status === 429 || status === 529) return json(503, { error: "Claude is busy. Try again in a minute." });

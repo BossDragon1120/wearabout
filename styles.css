@@ -178,3 +178,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .signout{margin-top:8px;align-self:center}
 .keepbg{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
 .keepbg input{width:20px;height:20px;accent-color:var(--accent)}
+.goalrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:14px;color:var(--muted)}
+.goalrow b{color:var(--ink)}
+.goalrow.editing{flex-direction:column;align-items:stretch;gap:6px;padding:12px 14px;border-radius:16px;background:var(--surface);border:1px solid var(--line)}
+.badges{display:flex;flex-wrap:wrap;gap:6px}
+.bdg{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;background:var(--gold-soft);border:1px solid var(--gold);font-size:13px;font-weight:600;color:var(--score-ink)}
+.bpill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 7px;font-size:12px;background:var(--gold-soft);letter-spacing:1px}

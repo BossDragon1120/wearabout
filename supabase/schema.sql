@@ -23,11 +23,18 @@ create table public.fits (
   thumb_path text not null,                 -- fits/<uid>/<id>-thumb.jpg
   orig_path text,                           -- fits/<uid>/<id>-orig.jpg (kept for the wardrobe builder)
   score numeric(3,1),
-  analysis jsonb,                           -- {dims, low, review, tweak, buy}
+  analysis jsonb,                           -- {dims, low, review, tweak, buy, badges, goal}
   items jsonb not null default '[]',        -- [{label, type, brand}]
   rec_fb jsonb not null default '{}'        -- {tweak: 'up'|'down', buy: 'up'|'down'}
 );
 create index fits_user_created on public.fits (user_id, created_at desc);
+
+-- Private per-person settings, such as the personal style goal that counts for 10% of the score.
+create table public.user_settings (
+  user_id uuid primary key default auth.uid() references auth.users on delete cascade,
+  style_goal text not null default '' check (char_length(style_goal) <= 40),
+  updated_at timestamptz not null default now()
+);
 
 create table public.saved_recs (
   id uuid primary key default gen_random_uuid(),
@@ -59,6 +66,7 @@ create table public.posts (
   detail text not null default '',
   caption text not null default '' check (char_length(caption) <= 140),
   plugs jsonb not null default '[]',        -- [{label, link, review}]
+  badges jsonb not null default '[]',       -- badge names the fit earned, shown to friends
   image_path text not null                  -- posts/<uid>/<id>.jpg
 );
 create index posts_created on public.posts (created_at desc);
@@ -122,6 +130,7 @@ grant execute on function public.find_by_code(text) to authenticated;
 alter table public.profiles enable row level security;
 alter table public.fits enable row level security;
 alter table public.saved_recs enable row level security;
+alter table public.user_settings enable row level security;
 alter table public.friendships enable row level security;
 alter table public.posts enable row level security;
 alter table public.hearts enable row level security;
@@ -140,6 +149,8 @@ grant update (handle) on public.profiles to authenticated;   -- friend codes can
 
 -- fits and saved recs: private to their owner
 create policy "own fits" on public.fits for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own settings" on public.user_settings for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own saved recs" on public.saved_recs for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
