@@ -21,7 +21,7 @@ Your Photoroom and Anthropic keys live only in Supabase's server functions, neve
    <p>Enter this code in the app: <strong>{{ .Token }}</strong></p>
    ```
    Do the same for the **Confirm signup** template.
-5. **Authentication → URL Configuration**: set Site URL to your app's address, e.g. `https://YOUR-GITHUB-NAME.github.io/fit-check/`.
+5. **Authentication → URL Configuration**: set Site URL to your app's address, e.g. `https://bossdragon1120.github.io/wearabout/`.
 6. **Project Settings → API**: copy the **Project URL** and the **anon / publishable key**. Put them in [`config.js`](config.js) (or send them to Claude to commit).
 
 > Supabase's built-in email sender is rate-limited (a few emails an hour) and meant for testing. Before inviting friends, add your own email sender under **Authentication → Emails → SMTP Settings** (Resend has a free tier).
@@ -50,7 +50,7 @@ In Supabase, open **Edge Functions → Deploy a new function → Via Editor**:
 If you prefer the command line: `supabase functions deploy backdrop` and `supabase functions deploy style-fit` from this folder, then `supabase secrets set PHOTOROOM_API_KEY=... ANTHROPIC_API_KEY=...`.
 
 ### 5. GitHub Pages
-In this repo: **Settings → Pages → Build and deployment → Deploy from a branch**, branch `main`, folder `/ (root)`. Your app appears at `https://YOUR-GITHUB-NAME.github.io/fit-check/` within a minute or two.
+In this repo: **Settings → Pages → Build and deployment → Deploy from a branch**, branch `main`, folder `/ (root)`. Your app appears at `https://bossdragon1120.github.io/wearabout/` within a minute or two.
 
 ### 6. Put it on your phone
 Open the app's address in **Safari**, sign in with the emailed code, then **Share → Add to Home Screen**. Open it from the icon; you may need to sign in once more there.
