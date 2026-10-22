@@ -13,7 +13,7 @@ const DIMS = [["occasion_fit","Occasion fit",.30],["cohesion","Cohesion",.20],["
 const ITEM_TYPES = ["top","bottom","dress","outerwear","shoes","bag","belt","hat","scarf","eyewear","other"];
 const BEST = 8;
 const CAT_EMOJI = {"Beach/Resort":"🏖️","Travel Day":"✈️","Active/Workout":"🏃","Casual/Hangout":"☕","Errands":"🛍️","WFH":"🏠","Office":"💼","Work Event":"🎤","Get Fancy":"🥂","Night Out":"🌙","Festival":"🎪"};
-const TAG_SVG = '<svg viewBox="0 0 24 14" width="24" height="14" aria-hidden="true"><path d="M23 3.2A2.2 2.2 0 0 0 20.8 1H7.2L1.4 7l5.8 6h13.6a2.2 2.2 0 0 0 2.2-2.2Z" fill="#F2C690"/><circle cx="7.4" cy="7" r="1.4" fill="#FFF7EC"/></svg>';
+const TAG_SVG = '<svg viewBox="0 0 24 14" width="24" height="14" aria-hidden="true"><path d="M8.4 1H20.6A2.4 2.4 0 0 1 23 3.4v7.2a2.4 2.4 0 0 1-2.4 2.4H8.4C5 13 1.6 9.6 1.6 7S5 1 8.4 1Z" fill="#F2C690"/><circle cx="6.6" cy="7" r="1.3" fill="#FFF7EC"/></svg>';
 const ICON = {
   hanger:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 6.4A2.4 2.4 0 1 1 12 8.8v1.6"/><path d="M12 10.4 2.8 17.2a.9.9 0 0 0 .5 1.6h17.4a.9.9 0 0 0 .5-1.6Z"/></svg>',
   star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z"/></svg>',
@@ -188,7 +188,7 @@ function viewHome(){
   let out=`<button class="logbanner" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
     <div class="countrow"><span class="count">${S.fits.length}</span><span class="countlbl">Outfit${S.fits.length===1?"":"s"} logged</span></div>
     <div class="chips" role="toolbar" aria-label="Filters" style="margin-top:12px">
-      <button class="chip best ${f.best?"on":""}" data-act="filterBest" aria-pressed="${f.best}">⭐ Best (${BEST}+)</button>
+      <button class="chip best ${f.best?"on":""}" data-act="filterBest" aria-pressed="${f.best}">⭐ Best</button>
       ${CATS.map(c=>`<button class="chip ${f.cat===c?"on":""}" data-act="filterCat" data-cat="${esc(c)}" aria-pressed="${f.cat===c}">${TAG_SVG}${esc(c)}</button>`).join("")}
     </div>`;
   const list=S.fits.filter(x=>(!f.cat||x.category===f.cat)&&(!f.best||(x.score??0)>=BEST));
