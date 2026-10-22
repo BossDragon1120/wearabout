@@ -57,32 +57,32 @@ p{margin:0}
 .link{background:none;border:0;padding:0;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
 
 /* streak / log banner */
-.logbanner{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;text-align:left;padding:14px 18px;border-radius:16px;border:1.5px solid var(--gold);background:linear-gradient(90deg,var(--gold-soft),var(--surface) 70%)}
-.logbanner .lb-ic{font-size:30px;line-height:1}
-.logbanner b{display:block;font-size:16px}
-.logbanner .lb-sub{display:block;color:var(--muted);font-size:15px}
-.logbanner .lb-plus{font-size:30px;font-weight:300;color:var(--gold);line-height:1}
-.countrow{display:flex;align-items:baseline;gap:12px;margin-top:22px}
-.count{font-family:var(--display);font-weight:800;font-size:50px;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.countlbl{font-size:15px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.logbanner{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;padding:10px 14px;border-radius:16px;border:1.5px solid var(--gold);background:linear-gradient(90deg,var(--gold-soft),var(--surface) 70%)}
+.logbanner .lb-ic{font-size:24px;line-height:1}
+.logbanner b{display:block;font-size:15px}
+.logbanner .lb-sub{display:block;color:var(--muted);font-size:13px}
+.logbanner .lb-plus{font-size:26px;font-weight:300;color:var(--gold);line-height:1}
+.countrow{display:flex;align-items:baseline;gap:10px;margin-top:16px}
+.count{font-family:var(--display);font-weight:800;font-size:40px;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.countlbl{font-size:13px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 
 /* chips */
-.chips,.chipgrid{display:flex;flex-wrap:wrap;gap:10px}
-.chip{display:inline-flex;align-items:center;gap:8px;border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 16px;font-size:15px;font-weight:500;white-space:nowrap}
-.chip svg{flex:none}
+.chips,.chipgrid{display:flex;flex-wrap:wrap;gap:7px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 11px;font-size:13px;font-weight:500;white-space:nowrap}
+.chip svg{flex:none;width:18px;height:11px}
 .chip.on{background:var(--tag-soft);border-color:var(--tag-ink);color:var(--tag-ink);font-weight:600}
 .chip.best.on{background:var(--score-soft);border-color:var(--gold);color:var(--score-ink)}
 .chip.guess{border-color:var(--accent);border-style:dashed}
 
 /* grid of fits */
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 @media (min-width:560px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .card{display:flex;flex-direction:column;text-align:left;padding:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);overflow:hidden;box-shadow:0 1px 3px rgba(20,20,20,.04)}
 .card img{display:block;width:100%;aspect-ratio:3/4;object-fit:cover;background:var(--chip)}
-.cbody{display:flex;flex-direction:column;gap:8px;padding:12px 14px 16px}
-.cdate{font-size:14px;color:var(--muted)}
-.pills{display:flex;flex-wrap:wrap;gap:6px}
-.spill,.cpill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 11px;font-size:14px;font-weight:700;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.cbody{display:flex;flex-direction:column;gap:6px;padding:9px 10px 11px}
+.cdate{font-size:12px;color:var(--muted)}
+.pills{display:flex;flex-wrap:wrap;gap:5px}
+.spill,.cpill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .spill{background:var(--score-soft);color:var(--score-ink)}
 .cpill{background:var(--tag-soft);color:var(--tag-ink);font-weight:600}
 

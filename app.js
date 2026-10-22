@@ -187,7 +187,7 @@ function viewHome(){
   const sub = st.loggedToday ? "Today's fit is in. Add another anytime." : st.n ? "Keep your streak alive — what are you wearing?" : "Start your streak — what are you wearing?";
   let out=`<button class="logbanner" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
     <div class="countrow"><span class="count">${S.fits.length}</span><span class="countlbl">Outfit${S.fits.length===1?"":"s"} logged</span></div>
-    <div class="chips" role="toolbar" aria-label="Filters" style="margin-top:14px">
+    <div class="chips" role="toolbar" aria-label="Filters" style="margin-top:12px">
       <button class="chip best ${f.best?"on":""}" data-act="filterBest" aria-pressed="${f.best}">⭐ Best (${BEST}+)</button>
       ${CATS.map(c=>`<button class="chip ${f.cat===c?"on":""}" data-act="filterCat" data-cat="${esc(c)}" aria-pressed="${f.cat===c}">${TAG_SVG}${esc(c)}</button>`).join("")}
     </div>`;
@@ -195,7 +195,7 @@ function viewHome(){
   if(!S.loaded) out+=`<div class="note plain" style="margin-top:22px">Loading your fits…</div>`;
   else if(!S.fits.length) out+=`<div class="empty" style="margin-top:22px"><b>No fits yet</b><p class="small muted">Snap what you're wearing. Fit Check guesses the occasion, puts you on a fresh backdrop, scores it, and suggests one tweak and maybe one buy.</p></div>`;
   else if(!list.length) out+=`<div class="empty" style="margin-top:22px"><p class="small muted">No fits match ${f.best?"Best":""}${f.best&&f.cat?" + ":""}${esc(f.cat||"")} yet.</p></div>`;
-  else out+=`<div class="grid" style="margin-top:24px">${list.map(x=>{ const d=longDate(x.created_at); return `<button class="card" data-act="openFit" data-id="${esc(x.id)}">
+  else out+=`<div class="grid" style="margin-top:16px">${list.map(x=>{ const d=longDate(x.created_at); return `<button class="card" data-act="openFit" data-id="${esc(x.id)}">
       <img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit, ${esc(d)}" loading="lazy">
       <span class="cbody"><span class="cdate">${esc(d)}</span><span class="pills">${x.score!=null?`<span class="spill">⭐ ${fmtScore(x.score)}/10</span>`:""}<span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span></span></span></button>`; }).join("")}</div>`;
   return out;
