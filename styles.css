@@ -176,3 +176,5 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .auth p.lead{font-size:17px;color:var(--muted)}
 .codeinput{font-family:var(--display);font-size:28px;letter-spacing:.4em;text-align:center;font-weight:700}
 .signout{margin-top:8px;align-self:center}
+.keepbg{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
+.keepbg input{width:20px;height:20px;accent-color:var(--accent)}

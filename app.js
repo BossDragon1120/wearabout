@@ -213,13 +213,15 @@ function viewFlow(){
       <div class="chipgrid">${CATS.map(c=>`<button class="chip ${f.cat===c?"on":""} ${f.guess===c&&f.cat!==c?"guess":""}" data-act="pickCat" data-cat="${esc(c)}">${CAT_EMOJI[c]} ${esc(c)}</button>`).join("")}</div>
       <div class="field"><label for="detail">Details (optional)</label>
         <input class="input" id="detail" maxlength="60" placeholder="e.g. Fleet Week, dinner date, coffee with Sam" value="${esc(f.detail)}"></div>
+      <label class="keepbg"><input type="checkbox" id="keepBg" ${f.keepBg?"checked":""}> Keep my own background</label>
       <button class="btn primary block" data-act="runStyle" ${f.cat?"":"disabled"}>Style this fit</button></div>`;
   } else {
     const a=f.analysis, bothFailed=f.compState.studio==="failed"&&f.compState.themed==="failed";
+    const tiles=f.keepBg?[["original","Original"]]:[["studio","Studio"],["themed","Themed"],["original","Original"]];
     out+=`<div class="stack">
-      <div><h2>Pick a backdrop</h2><p class="small muted">${CAT_EMOJI[f.cat]||""} ${esc(f.cat)}${f.detail?" · "+esc(f.detail):""}</p></div>
-      <div class="bgpick">${bgTile("studio","Studio")}${bgTile("themed","Themed")}${bothFailed?bgTile("original","Original photo"):""}</div>
-      ${bothFailed?`<p class="small muted">${esc(f.bgErr||"Backdrops didn't work this time.")} You can save your original photo.</p>`:""}
+      <div><h2>${f.keepBg?"Your fit":"Pick a backdrop"}</h2><p class="small muted">${CAT_EMOJI[f.cat]||""} ${esc(f.cat)}${f.detail?" · "+esc(f.detail):""}</p></div>
+      <div class="bgpick" style="grid-template-columns:repeat(${tiles.length},minmax(0,1fr))${f.keepBg?";max-width:300px":""}">${tiles.map(([k,l])=>bgTile(k,l)).join("")}</div>
+      ${bothFailed?`<p class="small muted">${esc(f.bgErr||"Backdrops didn't work this time.")} You can still save the original.</p>`:""}
       <div class="status"><span class="dot ${a==="loading"?"live":a&&a.score!=null?"ok":""}"></span>
         <span>${a==="loading"?"Scoring your fit and picking recs…":a&&a.score!=null?"Score and recs ready.":"Couldn't score this fit: "+esc(f.analysisErr||"")}</span>
         ${a&&a!=="loading"&&a.score==null?`<button class="link" data-act="retryAnalysis">Try again</button>`:""}</div>
@@ -249,14 +251,16 @@ async function startFlow(file){
   f.guessing=false; if(S.flow===f && f.step==="occasion") render();
 }
 function runStyle(){
-  const f=S.flow; f.step="style"; render(); scrollTo(0,0);
-  for(const mode of ["studio","themed"]){
+  const f=S.flow; f.step="style";
+  f.comps.original={blob:f.origBlob,url:f.origUrl}; f.compState.original="ok";
+  if(f.keepBg) f.bg="original";
+  render(); scrollTo(0,0);
+  if(!f.keepBg) for(const mode of ["studio","themed"]){
     f.compState[mode]="loading";
     callFn("backdrop",{mode, image:f.b64, category:f.cat, detail:f.detail},true)
       .then(blob=>jpeg(blob,1440,.9))
-      .then(blob=>{ f.comps[mode]={blob,url:URL.createObjectURL(blob)}; f.compState[mode]="ok"; if(!f.bg||f.bg==="original") f.bg=mode; })
-      .catch(e=>{ f.compState[mode]="failed"; f.bgErr=e.message;
-        if(f.compState.studio==="failed"&&f.compState.themed==="failed"){ f.comps.original={blob:f.origBlob,url:f.origUrl}; f.bg="original"; } })
+      .then(blob=>{ f.comps[mode]={blob,url:URL.createObjectURL(blob)}; f.compState[mode]="ok"; if(!f.bg||(f.bg==="original"&&!f.pickedBg)) f.bg=mode; })
+      .catch(e=>{ f.compState[mode]="failed"; f.bgErr=e.message; if(!f.bg && f.compState.studio==="failed" && f.compState.themed==="failed") f.bg="original"; })
       .finally(()=>{ if(S.flow===f && S.view==="flow") render(); });
   }
   runAnalysis(f);
@@ -472,7 +476,7 @@ const ACT = {
   pickCat:t=>{ S.flow.cat=t.dataset.cat; render(); },
   runStyle:()=>runStyle(),
   retryAnalysis:()=>runAnalysis(S.flow),
-  pickBg:t=>{ S.flow.bg=t.dataset.bg; render(); },
+  pickBg:t=>{ S.flow.bg=t.dataset.bg; S.flow.pickedBg=true; render(); },
   saveFit:()=>saveFit(),
   recFb:t=>recFeedback(t.dataset.kind,t.dataset.val),
   addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null}]; render(); $("#saveItemsBtn").hidden=false; const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
@@ -536,6 +540,7 @@ document.addEventListener("change", e=>{
   const t=e.target;
   if(t.id==="photoIn") startFlow(t.files&&t.files[0]);
   else if(t.dataset.itemType!=null){ curFit().items[t.dataset.itemType].type=t.value; $("#saveItemsBtn").hidden=false; }
+  else if(t.id==="keepBg"&&S.flow) S.flow.keepBg=t.checked;
   else if(t.id==="blurOn"&&S.share){ S.share.blur.on=t.checked; render(); }
   else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn; if(t.checked) S.share.plugs[i]={link:"",review:""}; else delete S.share.plugs[i]; render(); }
 });
