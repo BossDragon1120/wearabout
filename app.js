@@ -10,7 +10,7 @@ const sb = CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 /* ---------- constants ---------- */
 const CATS = ["Beach/Resort","Travel Day","Active/Workout","Casual/Hangout","Errands","WFH","Office","Work Event","Get Fancy","Night Out","Festival"];
 const DIMS = [["occasion_fit","Occasion fit",.30],["cohesion","Cohesion",.20],["proportion","Proportion & fit",.20],["color","Color",.20],["details","Finishing details",.10]];
-const ITEM_TYPES = ["top","bottom","dress","outerwear","shoes","bag","belt","hat","scarf","eyewear","other"];
+const ITEM_TYPES = ["top","bottom","dress","jacket","outerwear","shoes","bag","belt","hat","scarf","eyewear","other"];
 const BEST = 8;
 const CAT_EMOJI = {"Beach/Resort":"🏖️","Travel Day":"✈️","Active/Workout":"🏃","Casual/Hangout":"☕","Errands":"🛍️","WFH":"🏠","Office":"💼","Work Event":"🎤","Get Fancy":"🥂","Night Out":"🌙","Festival":"🎪"};
 const TAG_SVG = '<svg viewBox="0 0 24 14" width="24" height="14" aria-hidden="true"><path d="M8.4 1H20.6A2.4 2.4 0 0 1 23 3.4v7.2a2.4 2.4 0 0 1-2.4 2.4H8.4C5 13 1.6 9.6 1.6 7S5 1 8.4 1Z" fill="#F2C690"/><circle cx="6.6" cy="7" r="1.3" fill="#FFF7EC"/></svg>';

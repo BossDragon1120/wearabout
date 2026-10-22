@@ -19,7 +19,7 @@ const json = (status: number, body: unknown) =>
 const CATS = ["Beach/Resort", "Travel Day", "Active/Workout", "Casual/Hangout", "Errands", "WFH", "Office",
   "Work Event", "Get Fancy", "Night Out", "Festival"];
 const DIMS: [string, number][] = [["occasion_fit", .30], ["cohesion", .20], ["proportion", .20], ["color", .20], ["details", .10]];
-const ITEM_TYPES = ["top", "bottom", "dress", "outerwear", "shoes", "bag", "belt", "hat", "scarf", "eyewear", "other"];
+const ITEM_TYPES = ["top", "bottom", "dress", "jacket", "outerwear", "shoes", "bag", "belt", "hat", "scarf", "eyewear", "other"];
 
 const guessPrompt = () => `This photo shows a person's outfit. Guess what occasion they are dressed for, based only on the clothing you can see.
 Choose exactly one category from this list: ${CATS.join(", ")}.
@@ -43,7 +43,7 @@ Score each dimension from 1 to 10 (one decimal allowed), with a note of at most 
 "tweak": one change using things they likely already own (styling, tucking, cuffing, swapping a piece, layering, hair). It must improve the lowest-scoring dimension. "title" at most 8 words, "detail" at most 30 words, "dimension" is that dimension's key.
 "buy": null, or {"item": the kind of item, described specifically without inventing a brand, "why": at most 25 words, "search": a 3-7 word Google search for it}.
 "review": one or two warm, specific sentences on what works.
-"items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")}, "brand": a string only if you are confident, else null}.
+"items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")} (use "jacket" for jackets, blazers, shackets and cardigans worn open; "outerwear" for coats, parkas and puffers), "brand": a string only if you are confident, else null}.
 If no outfit is visible, reply {"error":"<short reason>"} instead.
 
 Reply with only JSON in this shape:
