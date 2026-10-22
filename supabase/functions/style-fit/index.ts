@@ -6,7 +6,7 @@
 // Secrets: ANTHROPIC_API_KEY (required), CLAUDE_MODEL / CLAUDE_FAST_MODEL (optional),
 //          STYLE_DAILY_LIMIT (optional, default 60 calls per person per day).
 
-import { createClient } from "npm:@supabase/supabase-js@2.45.4";
+import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -116,8 +116,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json(405, { error: "Use POST." });
 
   const url = Deno.env.get("SUPABASE_URL")!;
-  const userClient = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } });
-  const { data: { user } } = await userClient.auth.getUser();
+  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const { data: { user } } = token ? await admin.auth.getUser(token) : { data: { user: null } };
   if (!user) return json(401, { error: "Sign in again." });
 
   const key = Deno.env.get("ANTHROPIC_API_KEY");
@@ -127,7 +128,6 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json(400, { error: "Bad request." }); }
   if (!body.image || body.image.length > 8_000_000) return json(400, { error: "Missing or oversized photo." });
 
-  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const limit = Number(Deno.env.get("STYLE_DAILY_LIMIT") ?? 60);
   const since = new Date(Date.now() - 864e5).toISOString();
   const { count } = await admin.from("ai_usage").select("id", { count: "exact", head: true })

@@ -5,7 +5,7 @@
 // Secrets: PHOTOROOM_API_KEY (required), PHOTOROOM_BG_MODEL (optional, e.g. background-studio-beta-2025-03-17),
 //          BACKDROP_DAILY_LIMIT (optional, default 40 images per person per day).
 
-import { createClient } from "npm:@supabase/supabase-js@2.45.4";
+import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -42,9 +42,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json(405, { error: "Use POST." });
 
   const url = Deno.env.get("SUPABASE_URL")!;
-  const auth = req.headers.get("Authorization") ?? "";
-  const userClient = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
-  const { data: { user } } = await userClient.auth.getUser();
+  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const { data: { user } } = token ? await admin.auth.getUser(token) : { data: { user: null } };
   if (!user) return json(401, { error: "Sign in again." });
 
   const key = Deno.env.get("PHOTOROOM_API_KEY");
@@ -58,7 +58,6 @@ Deno.serve(async (req) => {
   if (!body.image || body.image.length > 8_000_000) return json(400, { error: "Missing or oversized photo." });
 
   // Daily cap so a shared app can't run up the Photoroom bill.
-  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const limit = Number(Deno.env.get("BACKDROP_DAILY_LIMIT") ?? 40);
   const since = new Date(Date.now() - 864e5).toISOString();
   const { count } = await admin.from("ai_usage").select("id", { count: "exact", head: true })
