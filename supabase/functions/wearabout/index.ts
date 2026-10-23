@@ -27,8 +27,8 @@ const json = (status: number, body: unknown) =>
 
 /* ------------------------------------------------------------------ shared lists */
 
-const CATS = ["Beach/Resort", "Travel Day", "Active/Workout", "Casual/Hangout", "Errands", "WFH", "Office",
-  "Work Event", "Get Fancy", "Night Out", "Festival"];
+const CATS = ["Casual/Hangout", "Errands", "Office", "WFH", "Active/Workout", "Night Out", "Work Event",
+  "Get Fancy", "Travel Day", "Festival", "Beach/Resort"];
 const DIMS: [string, number][] = [["occasion_fit", .30], ["cohesion", .20], ["proportion", .20], ["color", .20], ["details", .10]];
 // With a personal style goal, the goal takes 10%: 5 points from occasion fit and 5 from color.
 const DIMS_GOAL: [string, number][] = [["occasion_fit", .25], ["cohesion", .20], ["proportion", .20], ["color", .15], ["details", .10], ["goal", .10]];

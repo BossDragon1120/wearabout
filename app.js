@@ -8,7 +8,7 @@ const sb = CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 }) : null;
 
 /* ---------- constants ---------- */
-const CATS = ["Beach/Resort","Travel Day","Active/Workout","Casual/Hangout","Errands","WFH","Office","Work Event","Get Fancy","Night Out","Festival"];
+const CATS = ["Casual/Hangout","Errands","Office","WFH","Active/Workout","Night Out","Work Event","Get Fancy","Travel Day","Festival","Beach/Resort"];
 const DIMS = [["occasion_fit","Occasion fit",.30],["cohesion","Cohesion",.20],["proportion","Proportion & fit",.20],["color","Color",.20],["details","Finishing details",.10]];
 const DIMS_GOAL = [["occasion_fit","Occasion fit",.25],["cohesion","Cohesion",.20],["proportion","Proportion & fit",.20],["color","Color",.15],["details","Finishing details",.10],["goal","Your goal",.10]];
 const dimsFor = goal => goal ? DIMS_GOAL : DIMS;
