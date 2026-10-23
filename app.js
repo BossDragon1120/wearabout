@@ -88,7 +88,8 @@ async function callFn(name, payload, asBlob=false){
       headers:{ "Content-Type":"application/json", Authorization:`Bearer ${session.access_token}`, apikey:SUPABASE_ANON_KEY },
       body: JSON.stringify(payload) });
   } catch { throw new Error("No connection. Check your signal and try again."); }
-  if(!res.ok){ let msg="Something went wrong. Try again."; try{ msg=(await res.json()).error||msg; }catch{} throw new Error(msg); }
+  if(!res.ok){ let msg=""; try{ const j=await res.json(); msg=j.error||j.message||j.msg||""; }catch{}
+    throw new Error((msg||"Something went wrong. Try again.")+` (code ${res.status})`); }
   return asBlob ? res.blob() : res.json();
 }
 async function loadMine(){
