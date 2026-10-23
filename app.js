@@ -20,6 +20,7 @@ const CAT_EMOJI = {"Beach/Resort":"🏖️","Travel Day":"✈️","Active/Workou
 const TAG_SVG = '<svg viewBox="0 0 24 14" width="24" height="14" aria-hidden="true"><path d="M8.4 1H20.6A2.4 2.4 0 0 1 23 3.4v7.2a2.4 2.4 0 0 1-2.4 2.4H8.4C5 13 1.6 9.6 1.6 7S5 1 8.4 1Z" fill="#F2C690"/><circle cx="6.6" cy="7" r="1.3" fill="#FFF7EC"/></svg>';
 const ICON = {
   hanger:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 6.4A2.4 2.4 0 1 1 12 8.8v1.6"/><path d="M12 10.4 2.8 17.2a.9.9 0 0 0 .5 1.6h17.4a.9.9 0 0 0 .5-1.6Z"/></svg>',
+  bulb:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3Z"/></svg>',
   star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z"/></svg>',
   feed:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="12" rx="2"/><path d="M4 19h16M4 22h10" stroke-linecap="round"/></svg>',
   people:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.7"/><path d="M17 14.5c2.4 0 4.1 1.5 4.5 4.5"/></svg>',
@@ -145,7 +146,7 @@ function renderTabs(){
   const homeish=["home","fit","flow","share"].includes(S.view);
   const on=id=>id==="home"?homeish:S.view===id;
   const t=(id,label,icon)=>`<button class="tab ${on(id)?"on":""}" data-act="nav" data-view="${id}" aria-current="${on(id)?"page":"false"}">${icon}<span>${label}</span></button>`;
-  $("#tabs").innerHTML=t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Saved",ICON.star)+t("friends","Friends",ICON.people);
+  $("#tabs").innerHTML=t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Ideas",ICON.bulb)+t("friends","Friends",ICON.people);
 }
 
 /* --- sign in --- */
@@ -338,7 +339,7 @@ function recCard(kind,label,title,detail,state){
   return `<div class="rec"><span class="kind">${label}</span><b>${esc(title)}</b>${detail?`<p class="small muted">${esc(detail)}</p>`:""}
     <div class="acts"><button class="iconbtn ${state==="up"?"on":""}" data-act="recFb" data-kind="${kind}" data-val="up" aria-label="Save this rec" aria-pressed="${state==="up"}">${state==="up"?ICON.heartFill:ICON.heart}</button>
     <button class="iconbtn ${state==="down"?"off":""}" data-act="recFb" data-kind="${kind}" data-val="down" aria-label="Not for me" aria-pressed="${state==="down"}">${ICON.x}</button>
-    ${state==="up"?`<span class="small muted" style="align-self:center">Saved</span>`:""}</div></div>`;
+    ${state==="up"?`<span class="small muted" style="align-self:center">Added to Ideas</span>`:""}</div></div>`;
 }
 async function openFit(id){
   S.fitId=id; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
@@ -352,7 +353,7 @@ async function recFeedback(kind,val){
     if(next==="up"){
       const an=x.analysis, r = kind==="buy" ? {title:an.buy.item, detail:an.buy.why, query:an.buy.search} : {title:an.tweak.title, detail:an.tweak.detail, query:an.tweak.title+" outfit styling"};
       const { data, error } = await sb.from("saved_recs").upsert({fit_id:x.id, kind, category:x.category, ...r},{onConflict:"fit_id,kind"}).select().single();
-      if(error) throw error; S.recs=[data,...S.recs.filter(z=>z.id!==data.id)]; toast("Saved to your recs");
+      if(error) throw error; S.recs=[data,...S.recs.filter(z=>z.id!==data.id)]; toast("Added to Ideas");
     } else {
       await sb.from("saved_recs").delete().eq("fit_id",x.id).eq("kind",kind);
       S.recs=S.recs.filter(z=>!(z.fit_id===x.id&&z.kind===kind));
@@ -442,10 +443,10 @@ async function toggleHeart(id){
   if(r.error){ h.mine=was; h.count+=was?1:-1; render(); toast("Couldn't save that heart."); }
 }
 
-/* --- saved recs --- */
+/* --- ideas (hearted recs) --- */
 function viewSaved(){
-  let out=`<div class="stack"><h2>Saved recs</h2>`;
-  if(!S.recs.length) out+=`<div class="empty"><b>No saved recs yet</b><p class="small muted">Tap the heart on a tweak or buy rec and it lands here, ready to look up.</p></div>`;
+  let out=`<div class="stack"><h2>Ideas</h2>`;
+  if(!S.recs.length) out+=`<div class="empty"><b>No ideas yet</b><p class="small muted">Heart a tweak or buy rec on any fit and it lands here, ready to look up.</p></div>`;
   for(const r of S.recs){ const f=S.fits.find(x=>x.id===r.fit_id);
     out+=`<div class="saved">${f?`<img src="${esc(url("fits",f.thumb_path))}" alt="">`:`<span></span>`}<div class="stack" style="gap:6px;min-width:0">
       <span class="tag" style="color:var(--accent)">${r.kind==="buy"?"Buy":"Tweak"} · ${esc(r.category||"")}</span><b>${esc(r.title)}</b>
