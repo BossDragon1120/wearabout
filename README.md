@@ -45,9 +45,9 @@ GitHub Pages can only host the app's screens; it can't run code that holds secre
    | `ANTHROPIC_API_KEY` | your Anthropic key |
 
    Optional: `BACKDROP_DAILY_LIMIT` (default 40 images per person per day), `STYLE_DAILY_LIMIT` (default 60), `CLAUDE_MODEL` (default `claude-sonnet-5-5`), `CLAUDE_FAST_MODEL` (default `claude-haiku-5-5`), `PHOTOROOM_BG_MODEL` (e.g. `background-studio-beta-2025-03-17`).
-2. **Edge Functions → Deploy a new function → Via Editor**. Name it exactly `wearabout`, replace the sample code with everything in [`supabase/functions/wearabout/index.ts`](supabase/functions/wearabout/index.ts), and deploy. Leave "Verify JWT" on.
+2. **Edge Functions → Deploy a new function → Via Editor**. Name it exactly `wear-about` (Supabase adds the hyphen), replace the sample code with everything in [`supabase/functions/wear-about/index.ts`](supabase/functions/wear-about/index.ts), and deploy. Leave "Verify JWT" on.
 
-Command line instead: `supabase functions deploy wearabout`, then `supabase secrets set PHOTOROOM_API_KEY=... ANTHROPIC_API_KEY=...`.
+Command line instead: `supabase functions deploy wear-about`, then `supabase secrets set PHOTOROOM_API_KEY=... ANTHROPIC_API_KEY=...`.
 
 ### 5. GitHub Pages
 In this repo: **Settings → Pages → Build and deployment → Deploy from a branch**, branch `main`, folder `/ (root)`. Your app appears at `https://bossdragon1120.github.io/wearabout/` within a minute or two.
@@ -65,7 +65,7 @@ Send them the app link. They sign up with their email, then you each add the oth
 | `config.js` | Supabase address and public key |
 | `manifest.webmanifest`, `sw.js`, `icons/` | Home-screen install and offline shell |
 | `supabase/schema.sql` | Tables, privacy rules and photo storage |
-| `supabase/functions/wearabout` | The one server function: Claude scoring and Photoroom backdrops |
+| `supabase/functions/wear-about` | The one server function: Claude scoring and Photoroom backdrops |
 
 ## Product principles (built into the prompts)
 1. **Never make things up.** Brands only when visible and certain; otherwise a plain description.

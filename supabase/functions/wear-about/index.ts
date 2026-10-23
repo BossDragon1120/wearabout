@@ -1,5 +1,5 @@
 // WearAbout server function (one function for everything the app needs from AI).
-// Deploy it in Supabase under the name: wearabout
+// Deploy it in Supabase under the name: wear-about
 //
 // Request: POST JSON from a signed-in user, with an "action":
 //   { action: "guess",    image }                                -> { category, confidence }          (Claude)
