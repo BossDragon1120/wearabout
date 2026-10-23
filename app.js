@@ -254,7 +254,7 @@ function viewFlow(){
       <div class="status"><span class="dot ${a==="loading"?"live":a&&a.score!=null?"ok":""}"></span>
         <span>${a==="loading"?"Scoring your fit and picking recs…":a&&a.score!=null?"Score and recs ready.":"Couldn't score this fit: "+esc(f.analysisErr||"")}</span>
         ${a&&a!=="loading"&&a.score==null?`<button class="link" data-act="retryAnalysis">Try again</button>`:""}</div>
-      <button class="btn primary block" data-act="saveFit" ${f.bg&&f.comps[f.bg]&&a!=="loading"&&!f.saving?"":"disabled"}>${f.saving?"Saving…":"Save fit"}</button>
+      ${(()=>{ const ok=f.bg&&f.comps[f.bg]&&a!=="loading"&&!f.saving; return `<div class="savebar"><button class="btn primary" data-act="saveFit" ${ok?"":"disabled"}>${f.saving&&!f.shareAfter?"Saving…":"Save"}</button><button class="btn" data-act="saveShare" ${ok?"":"disabled"}>${f.saving&&f.shareAfter?"Saving…":"Save & share"}</button></div>`; })()}
       ${a&&a!=="loading"&&a.score==null?`<p class="small muted">You can save without a score. It still counts for your streak.</p>`:""}
     </div>`;
   }
@@ -300,8 +300,8 @@ async function runAnalysis(f){
   catch(e){ f.analysis={score:null}; f.analysisErr=e.message; }
   if(S.flow===f && S.view==="flow") render();
 }
-async function saveFit(){
-  const f=S.flow; f.saving=true; render();
+async function saveFit(share=false){
+  const f=S.flow; f.saving=true; f.shareAfter=share; render();
   try {
     const id=crypto.randomUUID(), base=`${S.uid}/${id}`, a=f.analysis&&f.analysis.score!=null?f.analysis:null;
     const main=f.comps[f.bg].blob, thumb=await jpeg(main,420,.8);
@@ -314,8 +314,9 @@ async function saveFit(){
     const { data, error } = await sb.from("fits").insert(row).select().single();
     if(error) throw error;
     S.urls["fits:"+row.image_path]=f.comps[f.bg].url; S.urls["fits:"+row.thumb_path]=URL.createObjectURL(thumb);
-    S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
-    const n=streakInfo().n; toast(n>1?`Saved. ${n}-day streak.`:"Saved. Your streak starts today.");
+    S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
+    const n=streakInfo().n; toast(n>1?`Saved to your Fits · ${n}-day streak`:"Saved to your Fits · streak started");
+    if(share) await openShare();
   } catch(e){ console.error(e); f.saving=false; render(); toast("Couldn't save. Check your connection and try again."); }
 }
 
@@ -344,7 +345,7 @@ function viewFit(){
       <select data-item-type="${i}" aria-label="Item ${i+1} type">${ITEM_TYPES.map(t=>`<option ${t===it.type?"selected":""}>${t}</option>`).join("")}</select>
       <button class="iconbtn" data-act="removeItem" data-i="${i}" aria-label="Remove item">${ICON.x}</button></div>`).join("")||`<p class="small muted">No items listed.</p>`}</div>
     <div class="row"><button class="btn sm" data-act="addItem">Add item</button><button class="btn sm primary" data-act="saveItems" id="saveItemsBtn" hidden>Save changes</button></div></div>
-    <div class="row" style="gap:10px"><button class="btn primary" data-act="share">Share with friends</button><span class="spacer"></span><button class="btn ghost sm" data-act="deleteFit">Delete fit</button></div>
+    <div class="row" style="gap:10px"><button class="btn" data-act="share">Share with friends</button><span class="spacer"></span><button class="btn ghost sm" data-act="deleteFit">Delete fit</button></div>
     ${S.confirmDel?`<div class="confirm"><span class="small" style="flex:1;min-width:160px">Delete this fit for good? It also leaves your streak history.</span><button class="btn sm" data-act="cancelDelete">Keep</button><button class="btn sm primary" data-act="confirmDelete">Delete</button></div>`:""}
   </div>`;
   return out;
@@ -656,7 +657,8 @@ const ACT = {
   runStyle:()=>runStyle(),
   retryAnalysis:()=>runAnalysis(S.flow),
   pickBg:t=>{ S.flow.bg=t.dataset.bg; S.flow.pickedBg=true; render(); },
-  saveFit:()=>saveFit(),
+  saveFit:()=>saveFit(false),
+  saveShare:()=>saveFit(true),
   recFb:t=>recFeedback(t.dataset.kind,t.dataset.val),
   addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null}]; render(); $("#saveItemsBtn").hidden=false; const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
   removeItem:t=>{ const x=curFit(); x.items=x.items.filter((_,i)=>i!=t.dataset.i); render(); $("#saveItemsBtn").hidden=false; },

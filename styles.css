@@ -211,3 +211,5 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .status small{font-size:12px}
 .status{align-items:flex-start}
 .status .dot{margin-top:7px}
+.savebar{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.savebar .btn{width:100%}
