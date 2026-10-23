@@ -57,11 +57,12 @@ p{margin:0}
 .link{background:none;border:0;padding:0;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
 
 /* streak / log banner */
-.logbanner{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;padding:10px 14px;border-radius:16px;border:1.5px solid var(--gold);background:linear-gradient(90deg,var(--gold-soft),var(--surface) 70%)}
+.logbanner{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;padding:10px 14px;border-radius:16px;border:2px solid var(--gold);background:linear-gradient(100deg,var(--gold-soft) 0%,var(--gold-soft) 45%,var(--surface) 100%);box-shadow:0 6px 18px -6px rgba(201,155,82,.55)}
+.logbanner:active{transform:translateY(1px);box-shadow:0 3px 10px -6px rgba(201,155,82,.55)}
 .logbanner .lb-ic{font-size:24px;line-height:1}
-.logbanner b{display:block;font-size:15px}
+.logbanner b{display:block;font-size:15px;font-weight:800;letter-spacing:-.005em}
 .logbanner .lb-sub{display:block;color:var(--muted);font-size:13px}
-.logbanner .lb-plus{font-size:26px;font-weight:300;color:var(--gold);line-height:1}
+.logbanner .lb-plus{width:30px;height:30px;border-radius:50%;background:var(--gold);color:#FFFFFF;display:grid;place-items:center;font-size:22px;font-weight:500;line-height:1;padding-bottom:2px}
 .countrow{display:flex;align-items:baseline;gap:10px;margin-top:16px}
 .count{font-family:var(--display);font-weight:800;font-size:40px;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .countlbl{font-size:13px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
