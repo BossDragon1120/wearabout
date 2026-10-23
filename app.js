@@ -247,7 +247,7 @@ function viewFlow(){
 function bgTile(key,label){
   const f=S.flow, c=f.comps[key], st=f.compState[key];
   const inner = c ? `<img src="${c.url}" alt="${label} option">` :
-    `<div class="ph">${st==="failed" ? "Couldn't make this one." : key==="themed" ? "Building your scene…" : "Cutting you out…"}</div>`;
+    `<div class="ph">${st==="failed" ? "Couldn't make this one."+(f.errs&&f.errs[key]?`<br><small>${esc(f.errs[key])}</small>`:"") : key==="themed" ? "Building your scene…" : "Cutting you out…"}</div>`;
   return `<button class="bgopt ${f.bg===key?"on":""}" data-act="pickBg" data-bg="${key}" ${c?"":"disabled"} aria-pressed="${f.bg===key}">${inner}<span>${label}</span></button>`;
 }
 async function startFlow(file){
@@ -273,7 +273,7 @@ function runStyle(){
     callFn("wearabout",{action:"backdrop", mode, image:f.b64, category:f.cat, detail:f.detail},true)
       .then(blob=>jpeg(blob,1440,.9))
       .then(blob=>{ f.comps[mode]={blob,url:URL.createObjectURL(blob)}; f.compState[mode]="ok"; if(!f.bg||(f.bg==="original"&&!f.pickedBg)) f.bg=mode; })
-      .catch(e=>{ f.compState[mode]="failed"; f.bgErr=e.message; if(!f.bg && f.compState.studio==="failed" && f.compState.themed==="failed") f.bg="original"; })
+      .catch(e=>{ f.compState[mode]="failed"; f.bgErr=e.message; (f.errs||(f.errs={}))[mode]=e.message; console.error("backdrop",mode,e.message); if(!f.bg && f.compState.studio==="failed" && f.compState.themed==="failed") f.bg="original"; })
       .finally(()=>{ if(S.flow===f && S.view==="flow") render(); });
   }
   runAnalysis(f);
