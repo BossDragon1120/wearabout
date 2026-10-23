@@ -49,6 +49,9 @@ GitHub Pages can only host the app's screens; it can't run code that holds secre
 
 Command line instead: `supabase functions deploy wear-about`, then `supabase secrets set PHOTOROOM_API_KEY=... ANTHROPIC_API_KEY=...`.
 
+### Closet (one-time update for projects set up before the Closet existed)
+Run [`supabase/migrations/002_closet.sql`](supabase/migrations/002_closet.sql) in the SQL Editor, and paste the latest `supabase/functions/wear-about/index.ts` into the `wear-about` function again. New projects get the closet table from `schema.sql` automatically.
+
 ### 5. GitHub Pages
 In this repo: **Settings → Pages → Build and deployment → Deploy from a branch**, branch `main`, folder `/ (root)`. Your app appears at `https://bossdragon1120.github.io/wearabout/` within a minute or two.
 

@@ -16,10 +16,13 @@ const BADGES = [["Nailed the occasion","🎯"],["Color play","🎨"],["Great pro
 const badgeIcon = n => (BADGES.find(b=>b[0]===n)||[,"🏅"])[1];
 const ITEM_TYPES = ["top","bottom","dress","jacket","outerwear","shoes","bag","belt","hat","scarf","eyewear","other"];
 const BEST = 8;
+const TYPE_LABEL = {top:"Tops",bottom:"Bottoms",dress:"Dresses",jacket:"Jackets",outerwear:"Outerwear",shoes:"Shoes",bag:"Bags",belt:"Belts",hat:"Hats",scarf:"Scarves",eyewear:"Eyewear",other:"Other"};
 const CAT_EMOJI = {"Beach/Resort":"🏖️","Travel Day":"✈️","Active/Workout":"🏃","Casual/Hangout":"☕","Errands":"🛍️","WFH":"🏠","Office":"💼","Work Event":"🎤","Get Fancy":"🥂","Night Out":"🌙","Festival":"🎪"};
 const TAG_SVG = '<svg viewBox="0 0 24 14" width="24" height="14" aria-hidden="true"><path d="M8.4 1H20.6A2.4 2.4 0 0 1 23 3.4v7.2a2.4 2.4 0 0 1-2.4 2.4H8.4C5 13 1.6 9.6 1.6 7S5 1 8.4 1Z" fill="#F2C690"/><circle cx="6.6" cy="7" r="1.3" fill="#FFF7EC"/></svg>';
 const ICON = {
   hanger:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 6.4A2.4 2.4 0 1 1 12 8.8v1.6"/><path d="M12 10.4 2.8 17.2a.9.9 0 0 0 .5 1.6h17.4a.9.9 0 0 0 .5-1.6Z"/></svg>',
+  closet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="4" y="3" width="16" height="16" rx="1.5"/><path d="M12 3v16M6 19v2M18 19v2"/><path d="M10 10v2M14 10v2" stroke-linecap="round"/></svg>',
+  chev:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>',
   bulb:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3Z"/></svg>',
   star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z"/></svg>',
   feed:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="12" rx="2"/><path d="M4 19h16M4 22h10" stroke-linecap="round"/></svg>',
@@ -37,6 +40,7 @@ const S = {
   urls:{},
   view:"home", filter:{cat:null,best:false},
   flow:null, fitId:null, share:null, confirmDel:false, friendMsg:"", codeIn:"", handleIn:null, goal:"", goalEdit:false, goalIn:null,
+  closet:[], closetReady:false, closetSort:"most", itemId:null, itemEdit:null, mergeTo:"", confirmRemove:false, fitBack:"home",
   auth:{step:"email", email:"", code:"", busy:false, msg:""},
 };
 
@@ -94,13 +98,15 @@ async function callFn(name, payload, asBlob=false){
   return asBlob ? res.blob() : res.json();
 }
 async function loadMine(){
-  const [f,r,p,g] = await Promise.all([
+  const [f,r,p,g,c] = await Promise.all([
     sb.from("fits").select("*").order("created_at",{ascending:false}).limit(1000),
     sb.from("saved_recs").select("*").order("created_at",{ascending:false}),
     sb.from("profiles").select("*").eq("id",S.uid).maybeSingle(),
     sb.from("user_settings").select("style_goal").eq("user_id",S.uid).maybeSingle(),
+    sb.from("closet_items").select("*").order("created_at",{ascending:true}),
   ]);
   S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null; S.goal=(g.data&&g.data.style_goal)||"";
+  S.closetReady=!c.error; S.closet=c.data||[];
   await signUrls("fits", S.fits.map(x=>x.thumb_path));
 }
 async function loadSocial(){
@@ -135,7 +141,7 @@ function render(){
   if(!signedIn){ m.innerHTML=viewAuth(); return; }
   renderTabs();
   const v=S.view;
-  m.innerHTML = v==="flow"?viewFlow() : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : viewHome();
+  m.innerHTML = v==="flow"?viewFlow() : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
   if(v==="share") drawShare();
 }
 function softRender(views){
@@ -144,9 +150,9 @@ function softRender(views){
 }
 function renderTabs(){
   const homeish=["home","fit","flow","share"].includes(S.view);
-  const on=id=>id==="home"?homeish:S.view===id;
+  const on=id=>id==="home"?homeish:id==="closet"?["closet","item"].includes(S.view):S.view===id;
   const t=(id,label,icon)=>`<button class="tab ${on(id)?"on":""}" data-act="nav" data-view="${id}" aria-current="${on(id)?"page":"false"}">${icon}<span>${label}</span></button>`;
-  $("#tabs").innerHTML=t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Ideas",ICON.bulb)+t("friends","Friends",ICON.people);
+  $("#tabs").innerHTML=t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Ideas",ICON.bulb)+t("friends","Friends",ICON.people)+t("closet","Closet",ICON.closet);
 }
 
 /* --- sign in --- */
@@ -284,7 +290,7 @@ function runStyle(){
 }
 async function runAnalysis(f){
   f.analysis="loading"; if(S.flow===f) render();
-  try { f.analysis=await callFn("wear-about",{action:"analyze", image:f.b64, category:f.cat, detail:f.detail, goal:S.goal||""}); }
+  try { f.analysis=await callFn("wear-about",{action:"analyze", image:f.b64, category:f.cat, detail:f.detail, goal:S.goal||"", closet:closetForAI()}); }
   catch(e){ f.analysis={score:null}; f.analysisErr=e.message; }
   if(S.flow===f && S.view==="flow") render();
 }
@@ -298,6 +304,7 @@ async function saveFit(){
     const row={id, local_date:localDate(), category:f.cat, detail:f.detail||"", bg_choice:f.bg,
       image_path:base+".jpg", thumb_path:base+"-thumb.jpg", orig_path:base+"-orig.jpg",
       score:a?a.score:null, analysis:a?{dims:a.dims,low:a.low,review:a.review,tweak:a.tweak,buy:a.buy,badges:a.badges||[],goal:a.goal||""}:null, items:a?a.items:[]};
+    row.items = await linkItems(row.items);
     const { data, error } = await sb.from("fits").insert(row).select().single();
     if(error) throw error;
     S.urls["fits:"+row.image_path]=f.comps[f.bg].url; S.urls["fits:"+row.thumb_path]=URL.createObjectURL(thumb);
@@ -309,9 +316,10 @@ async function saveFit(){
 /* --- fit detail --- */
 const curFit=()=>S.fits.find(x=>x.id===S.fitId);
 function viewFit(){
-  const x=curFit(); if(!x) return `<button class="back" data-act="nav" data-view="home">${ICON.back} Fits</button><p class="muted">This fit isn't available.</p>`;
+  const backTo=S.fitBack==="item"&&S.itemId?"item":"home", backLbl=backTo==="item"?"Closet item":"Fits";
+  const x=curFit(); if(!x) return `<button class="back" data-act="nav" data-view="${backTo}">${ICON.back} ${backLbl}</button><p class="muted">This fit isn't available.</p>`;
   const an=x.analysis, fb=x.rec_fb||{};
-  let out=`<button class="back" data-act="nav" data-view="home">${ICON.back} Fits</button><div class="stack" style="gap:20px">
+  let out=`<button class="back" data-act="nav" data-view="${backTo}">${ICON.back} ${backLbl}</button><div class="stack" style="gap:20px">
     <img class="fitimg" src="${esc(url("fits",x.image_path)||url("fits",x.thumb_path))}" alt="${esc(x.category)} fit">
     <div class="row"><span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}${x.detail?" · "+esc(x.detail):""}</span><span class="spacer"></span><span class="small muted">${new Date(x.created_at).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}</span></div>`;
   if(x.score!=null && an){
@@ -341,8 +349,8 @@ function recCard(kind,label,title,detail,state){
     <button class="iconbtn ${state==="down"?"off":""}" data-act="recFb" data-kind="${kind}" data-val="down" aria-label="Not for me" aria-pressed="${state==="down"}">${ICON.x}</button>
     ${state==="up"?`<span class="small muted" style="align-self:center">Added to Ideas</span>`:""}</div></div>`;
 }
-async function openFit(id){
-  S.fitId=id; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
+async function openFit(id, from="home"){
+  S.fitBack=from; S.fitId=id; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
   const x=curFit(); if(x && !url("fits",x.image_path)){ await signUrls("fits",[x.image_path]); if(S.fitId===id && S.view==="fit") render(); }
 }
 async function recFeedback(kind,val){
@@ -483,6 +491,145 @@ async function addFriend(id){
   S.out.add(id); await loadSocial();
 }
 
+/* --- closet (built from logged fits) --- */
+const normLabel = s => String(s||"").toLowerCase().replace(/\s+/g," ").trim();
+function closetStats(){
+  // For each closet piece: how many fits it appears in, the latest date, and that fit's photo.
+  const st={};
+  for(const f of S.fits){ // newest first
+    const seen=new Set();
+    for(const it of (f.items||[])){
+      if(!it.item_id || seen.has(it.item_id)) continue; seen.add(it.item_id);
+      const e=st[it.item_id]||(st[it.item_id]={count:0,last:null,thumb:null,fits:[]});
+      e.count++; e.fits.push(f.id); if(!e.last){ e.last=f.local_date; e.thumb=f.thumb_path; }
+    }
+  }
+  return st;
+}
+function closetForAI(){
+  if(!S.closetReady) return [];
+  const st=closetStats();
+  return [...S.closet].sort((a,b)=>String((st[b.id]||{}).last||"").localeCompare(String((st[a.id]||{}).last||"")))
+    .slice(0,250).map(c=>({id:c.id,label:c.label,type:c.type}));
+}
+// Give every item in a fit a closet piece: the one Claude matched, or a new one.
+async function linkItems(items){
+  if(!S.closetReady || !items || !items.length) return items||[];
+  const ids=new Set(S.closet.map(c=>c.id)), fresh=[];
+  const out=items.map(it=>{
+    if(it.item_id===null) return it;                       // user removed it from the closet on purpose
+    if(it.item_id && ids.has(it.item_id)) return it;
+    const match = it.match && ids.has(it.match) ? it.match : null;
+    if(match){ const {match:_, ...rest}=it; return {...rest, item_id:match}; }
+    const id=crypto.randomUUID(); fresh.push({id, label:String(it.label).slice(0,80)||"Item", type:ITEM_TYPES.includes(it.type)?it.type:"other", brand:it.brand||null});
+    const {match:_, ...rest}=it; return {...rest, item_id:id};
+  });
+  if(fresh.length){
+    const { error } = await sb.from("closet_items").insert(fresh);
+    if(error){ console.error(error); return items.map(({match, ...rest})=>rest); }
+    S.closet=[...S.closet, ...fresh];
+  }
+  return out;
+}
+// Fits logged before the Closet existed: group their items by name and type, once.
+async function backfillCloset(){
+  if(!S.closetReady) return;
+  const byKey=new Map(S.closet.map(c=>[normLabel(c.label)+"|"+c.type, c.id])), fresh=[], changed=[];
+  for(const f of S.fits){
+    let dirty=false;
+    const items=(f.items||[]).map(it=>{
+      if(it.item_id!==undefined || !it.label) return it;
+      const key=normLabel(it.label)+"|"+(it.type||"other");
+      let id=byKey.get(key);
+      if(!id){ id=crypto.randomUUID(); byKey.set(key,id); fresh.push({id, label:String(it.label).slice(0,80), type:ITEM_TYPES.includes(it.type)?it.type:"other", brand:it.brand||null}); }
+      dirty=true; return {...it, item_id:id};
+    });
+    if(dirty){ f.items=items; changed.push(f); }
+  }
+  if(!changed.length) return;
+  for(let i=0;i<fresh.length;i+=200){ const { error } = await sb.from("closet_items").insert(fresh.slice(i,i+200)); if(error) throw error; }
+  S.closet=[...S.closet, ...fresh];
+  for(let i=0;i<changed.length;i+=8) await Promise.all(changed.slice(i,i+8).map(f=>sb.from("fits").update({items:f.items}).eq("id",f.id)));
+}
+function shortDay(ds){ if(!ds) return ""; const [y,m,d]=ds.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString(undefined,{month:"short",day:"numeric"}); }
+function viewCloset(){
+  if(!S.closetReady) return `<div class="stack"><h2>Closet</h2><div class="note">The Closet needs one quick database update. Run <b>002_closet.sql</b> in Supabase's SQL Editor, then reopen the app.</div></div>`;
+  const st=closetStats(), live=S.closet.filter(c=>st[c.id]);
+  const sorters={
+    most:(a,b)=>(st[b.id].count-st[a.id].count)||String(st[b.id].last).localeCompare(String(st[a.id].last)),
+    recent:(a,b)=>String(st[b.id].last).localeCompare(String(st[a.id].last)),
+    least:(a,b)=>(st[a.id].count-st[b.id].count)||String(st[a.id].last).localeCompare(String(st[b.id].last)),
+  };
+  const sorted=[...live].sort(sorters[S.closetSort]||sorters.most);
+  let out=`<div class="stack"><div class="countrow" style="margin-top:0"><span class="count">${live.length}</span><span class="countlbl">Piece${live.length===1?"":"s"} in your closet</span></div>
+    <p class="small muted" style="margin-top:-6px">Built from your logged fits. Each new fit adds or matches pieces automatically.</p>
+    <div class="chips" role="toolbar" aria-label="Sort">${[["most","Most worn"],["recent","Recently worn"],["least","Least worn"]].map(([k,l])=>`<button class="chip ${S.closetSort===k?"on":""}" data-act="closetSort" data-sort="${k}" aria-pressed="${S.closetSort===k}">${l}</button>`).join("")}</div>`;
+  if(!S.loaded) out+=`<div class="note plain">Loading your closet…</div>`;
+  else if(!live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;
+  else for(const type of ITEM_TYPES){
+    const group=sorted.filter(c=>(c.type||"other")===type); if(!group.length) continue;
+    out+=`<section class="cgroup"><h3>${TYPE_LABEL[type]} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<button class="citem" data-act="openItem" data-id="${esc(c.id)}">
+      <img src="${esc(url("fits",e.thumb))}" alt="" loading="lazy"><span class="ctext"><b>${esc(c.label)}</b><span class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</span></span>${ICON.chev}</button>`; }).join("")}</section>`;
+  }
+  return out+"</div>";
+}
+const curItem=()=>S.closet.find(c=>c.id===S.itemId);
+function viewItem(){
+  const c=curItem(); if(!c) return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><p class="muted">This piece isn't in your closet anymore.</p>`;
+  const e=closetStats()[c.id]||{count:0,fits:[]}, ed=S.itemEdit||{};
+  const fits=e.fits.map(id=>S.fits.find(f=>f.id===id)).filter(Boolean);
+  const others=S.closet.filter(o=>o.id!==c.id && closetStats()[o.id]).sort((a,b)=>((a.type===c.type)?0:1)-((b.type===c.type)?0:1)||a.label.localeCompare(b.label));
+  return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><div class="stack" style="gap:18px">
+    <div><span class="tag">${esc(TYPE_LABEL[c.type]||"Other")}</span><h2 style="margin-top:4px">${esc(c.label)}</h2>
+      <p class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</p></div>
+    <div class="grid g3">${fits.map(x=>`<button class="card" data-act="openFit" data-id="${esc(x.id)}" data-from="item"><img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit" loading="lazy"><span class="cbody"><span class="cdate">${esc(longDate(x.created_at))}</span><span class="pills"><span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span></span></span></button>`).join("")}</div>
+    <div class="panel"><h3>Edit</h3>
+      <div class="field"><label for="itemLabel">Name</label><input class="input" id="itemLabel" maxlength="80" value="${esc(ed.label ?? c.label)}"></div>
+      <div class="field"><label for="itemType">Type</label><select class="input" id="itemType">${ITEM_TYPES.map(t=>`<option value="${t}" ${t===(ed.type??c.type)?"selected":""}>${TYPE_LABEL[t]}</option>`).join("")}</select></div>
+      <button class="btn sm primary" data-act="saveItem">Save</button></div>
+    ${others.length?`<div class="panel"><h3>Duplicate?</h3><p class="small muted">If this is the same piece as another one, merge them. Its fits move over and this entry goes away.</p>
+      <select class="input" id="mergeTo" aria-label="Merge into"><option value="">Same piece as…</option>${others.map(o=>`<option value="${esc(o.id)}" ${S.mergeTo===o.id?"selected":""}>${esc(o.label)}${o.type!==c.type?` (${esc(TYPE_LABEL[o.type]||o.type)})`:""}</option>`).join("")}</select>
+      <button class="btn sm" data-act="mergeItem" ${S.mergeTo?"":"disabled"}>Merge</button></div>`:""}
+    <div class="row"><span class="spacer"></span><button class="btn ghost sm" data-act="removeItemAsk">Remove from closet</button></div>
+    ${S.confirmRemove?`<div class="confirm"><span class="small" style="flex:1;min-width:160px">Remove this piece? Your fits stay as they are; it just won't be tracked in your closet.</span><button class="btn sm" data-act="removeItemCancel">Keep</button><button class="btn sm primary" data-act="removeItemConfirm">Remove</button></div>`:""}
+  </div>`;
+}
+async function updateFitsItems(fn){
+  const changed=[];
+  for(const f of S.fits){ const before=JSON.stringify(f.items||[]); const items=fn(f.items||[]); if(JSON.stringify(items)!==before){ f.items=items; changed.push(f); } }
+  for(let i=0;i<changed.length;i+=8){
+    const res=await Promise.all(changed.slice(i,i+8).map(f=>sb.from("fits").update({items:f.items}).eq("id",f.id)));
+    const bad=res.find(r=>r.error); if(bad) throw bad.error;
+  }
+}
+async function saveClosetItem(){
+  const c=curItem(); if(!c) return; const ed=S.itemEdit||{};
+  const label=String(ed.label ?? c.label).trim().slice(0,80), type=ed.type ?? c.type;
+  if(!label){ toast("Give it a name first."); return; }
+  const { error } = await sb.from("closet_items").update({label,type}).eq("id",c.id);
+  if(error){ toast("Couldn't save. Try again."); return; }
+  c.label=label; c.type=type; S.itemEdit=null; render(); toast("Saved");
+}
+async function mergeClosetItem(){
+  const c=curItem(), to=S.mergeTo; if(!c||!to) return;
+  try {
+    await updateFitsItems(items=>{
+      const hasTo=items.some(i=>i.item_id===to);
+      return items.flatMap(i=> i.item_id!==c.id ? [i] : hasTo ? [] : [{...i,item_id:to}]);
+    });
+    const { error } = await sb.from("closet_items").delete().eq("id",c.id); if(error) throw error;
+    S.closet=S.closet.filter(x=>x.id!==c.id); S.itemId=to; S.mergeTo=""; S.itemEdit=null; render(); scrollTo(0,0); toast("Merged");
+  } catch(e){ console.error(e); toast("Couldn't merge. Try again."); }
+}
+async function removeClosetItem(){
+  const c=curItem(); if(!c) return;
+  try {
+    await updateFitsItems(items=>items.map(i=>i.item_id===c.id?{...i,item_id:null}:i));
+    const { error } = await sb.from("closet_items").delete().eq("id",c.id); if(error) throw error;
+    S.closet=S.closet.filter(x=>x.id!==c.id); S.view="closet"; S.confirmRemove=false; render(); toast("Removed from closet");
+  } catch(e){ console.error(e); toast("Couldn't remove. Try again."); }
+}
+
 /* ---------- actions ---------- */
 const ACT = {
   nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.confirmDel=false; render(); scrollTo(0,0);
@@ -490,7 +637,14 @@ const ACT = {
   log:()=>{ const i=$("#photoIn"); i.value=""; i.click(); },
   filterBest:()=>{ S.filter.best=!S.filter.best; render(); },
   filterCat:t=>{ const c=t.dataset.cat||null; S.filter.cat=S.filter.cat===c?null:c; render(); },
-  openFit:t=>openFit(t.dataset.id),
+  openFit:t=>openFit(t.dataset.id, t.dataset.from||"home"),
+  closetSort:t=>{ S.closetSort=t.dataset.sort; render(); },
+  openItem:t=>{ S.itemId=t.dataset.id; S.itemEdit=null; S.mergeTo=""; S.confirmRemove=false; S.view="item"; render(); scrollTo(0,0); },
+  saveItem:()=>saveClosetItem(),
+  mergeItem:()=>mergeClosetItem(),
+  removeItemAsk:()=>{ S.confirmRemove=true; render(); },
+  removeItemCancel:()=>{ S.confirmRemove=false; render(); },
+  removeItemConfirm:()=>removeClosetItem(),
   cancelFlow:()=>{ S.flow=null; S.view="home"; render(); },
   pickCat:t=>{ S.flow.cat=t.dataset.cat; render(); },
   runStyle:()=>runStyle(),
@@ -501,6 +655,7 @@ const ACT = {
   addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null}]; render(); $("#saveItemsBtn").hidden=false; const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
   removeItem:t=>{ const x=curFit(); x.items=x.items.filter((_,i)=>i!=t.dataset.i); render(); $("#saveItemsBtn").hidden=false; },
   saveItems:async()=>{ const x=curFit(); x.items=(x.items||[]).filter(i=>i.label.trim()).map(i=>({...i,label:i.label.trim()}));
+    try { x.items=await linkItems(x.items); } catch(e){ console.error(e); }
     const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); toast(error?"Couldn't save labels.":"Labels saved"); render(); },
   share:()=>openShare(),
   cancelShare:()=>{ S.share=null; S.view="fit"; render(); },
@@ -561,12 +716,15 @@ document.addEventListener("input", e=>{
   else if(t.id==="codeIn") S.codeIn=t.value;
   else if(t.id==="handleIn") S.handleIn=t.value;
   else if(t.id==="goalIn") S.goalIn=t.value;
+  else if(t.id==="itemLabel") (S.itemEdit||(S.itemEdit={})).label=t.value;
 });
 document.addEventListener("change", e=>{
   const t=e.target;
   if(t.id==="photoIn") startFlow(t.files&&t.files[0]);
   else if(t.dataset.itemType!=null){ curFit().items[t.dataset.itemType].type=t.value; $("#saveItemsBtn").hidden=false; }
   else if(t.id==="keepBg"&&S.flow) S.flow.keepBg=t.checked;
+  else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
+  else if(t.id==="mergeTo") { S.mergeTo=t.value; render(); }
   else if(t.id==="blurOn"&&S.share){ S.share.blur.on=t.checked; render(); }
   else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn; if(t.checked) S.share.plugs[i]={link:"",review:""}; else delete S.share.plugs[i]; render(); }
 });
@@ -577,11 +735,12 @@ async function onSession(session){
   if(S.booted && uid===S.uid) return;
   S.booted=true;
   S.uid=uid; S.email=session?.user?.email||""; S.loaded=false; S.urls={};
-  S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.view="home";
+  S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home";
   if(!uid){ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); return; }
   render();
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Pull to refresh."); }
   S.loaded=true; render();
+  backfillCloset().then(()=>softRender(["closet","item","fit"])).catch(console.error);
   loadSocial().then(()=>softRender(["feed","friends"])).catch(console.error);
 }
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
@@ -589,4 +748,4 @@ if(sb){
   sb.auth.onAuthStateChange((_ev,session)=>{ setTimeout(()=>onSession(session),0); });
   sb.auth.getSession().then(({data})=>onSession(data.session));
 } else render();
-document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&S.uid&&S.loaded){ loadMine().then(()=>softRender(["home","saved"])).catch(()=>{}); } });
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&S.uid&&S.loaded){ loadMine().then(()=>softRender(["home","saved","closet"])).catch(()=>{}); } });

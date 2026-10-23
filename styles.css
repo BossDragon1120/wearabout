@@ -191,3 +191,17 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 /* iPhone Safari zooms in on any text field under 16px and stays zoomed; keep all fields at 16px */
 .input,textarea.input,select,.item select,.goalrow .input{font-size:16px}
 .codeinput{font-size:28px}
+
+/* closet */
+.appbar nav{grid-template-columns:repeat(5,1fr)}
+.tab span{letter-spacing:.1em}
+.cgroup{display:flex;flex-direction:column;gap:8px}
+.cgroup h3{margin-top:6px}
+.citem{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;padding:8px 12px 8px 8px;border-radius:16px;border:1px solid var(--line);background:var(--surface);color:var(--muted)}
+.citem img{width:52px;aspect-ratio:3/4;object-fit:cover;border-radius:10px;background:var(--chip)}
+.ctext{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ctext b{color:var(--ink);font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grid.g3{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.grid.g3 .cbody{padding:6px 8px 8px}
+.grid.g3 .pills{display:none}
+.grid.g3 .cdate{font-size:11px}

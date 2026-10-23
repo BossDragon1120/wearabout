@@ -36,6 +36,18 @@ create table public.user_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Closet: each distinct piece of clothing, built automatically from logged fits.
+-- Fits link to it through items[].item_id; wear counts are worked out from the fits.
+create table public.closet_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  label text not null check (char_length(label) between 1 and 80),
+  type text not null default 'other',
+  brand text,
+  created_at timestamptz not null default now()
+);
+create index closet_items_user on public.closet_items (user_id);
+
 create table public.saved_recs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users on delete cascade,
@@ -131,6 +143,7 @@ alter table public.profiles enable row level security;
 alter table public.fits enable row level security;
 alter table public.saved_recs enable row level security;
 alter table public.user_settings enable row level security;
+alter table public.closet_items enable row level security;
 alter table public.friendships enable row level security;
 alter table public.posts enable row level security;
 alter table public.hearts enable row level security;
@@ -151,6 +164,8 @@ grant update (handle) on public.profiles to authenticated;   -- friend codes can
 create policy "own fits" on public.fits for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own settings" on public.user_settings for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own closet" on public.closet_items for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own saved recs" on public.saved_recs for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
