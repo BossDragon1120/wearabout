@@ -390,8 +390,9 @@ function viewShare(){
     <div class="stack" style="gap:8px"><h3>Plug something you love</h3>
       ${(x.items||[]).length?x.items.map((it,i)=>{ const p=sh.plugs[i]; return `<div class="plug">
         <label class="ck"><input type="checkbox" data-plug-on="${i}" ${p?"checked":""}> ${esc(it.label)}</label>
-        ${p?`<input class="input" data-plug-i="${i}" data-field="link" placeholder="Link to the seller (https://…)" value="${esc(p.link)}" inputmode="url">
-        <textarea class="input" data-plug-i="${i}" data-field="review" maxlength="160" placeholder="Short review: why you love it">${esc(p.review)}</textarea>`:""}</div>`; }).join(""):`<p class="small muted">No items were listed for this fit.</p>`}
+        ${p?`<input class="input" data-plug-i="${i}" data-field="brand" maxlength="40" placeholder="Brand (optional)" value="${esc(p.brand)}" autocapitalize="words">
+        <textarea class="input" data-plug-i="${i}" data-field="review" maxlength="160" placeholder="Why you love it (optional)">${esc(p.review)}</textarea>
+        <p class="small muted">Friends get a Shop it button that searches for ${esc([p.brand, it.label].filter(Boolean).join(" "))}.</p>`:""}</div>`; }).join(""):`<p class="small muted">No items were listed for this fit.</p>`}
     </div>
     <p class="small muted">Friends see the photo, occasion and caption. Your score stays private. Friends can only react with hearts.</p>
     <button class="btn primary block" data-act="postShare" ${sh.posting?"disabled":""}>${sh.posting?"Posting…":"Post to friends"}</button>
@@ -419,8 +420,7 @@ async function postShare(){
   const sh=S.share, x=curFit(); if(!sh||!x) return;
   const plugs=[];
   for(const [i,p] of Object.entries(sh.plugs)){ const it=x.items[i]; if(!it) continue;
-    const link=String(p.link||"").trim(); if(link&&!safeUrl(link)){ toast("Seller links need to start with https://"); return; }
-    plugs.push({label:it.label, link:safeUrl(link), review:String(p.review||"").slice(0,160)}); }
+    plugs.push({label:it.label, brand:String(p.brand||"").trim().slice(0,40), review:String(p.review||"").trim().slice(0,160)}); }
   sh.posting=true; render();
   try {
     drawShare(); const blob=await toBlob($("#shareCanvas"),"image/jpeg",.85);
@@ -445,7 +445,7 @@ function viewFeed(){
       <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
       <div class="body">${p.caption?`<p>${esc(p.caption)}</p>`:""}
       ${badgeChips(p.badges)}
-      ${(p.plugs||[]).map(g=>`<div class="plugcard"><b class="small">${esc(g.label)}</b>${g.review?`<span class="small">${esc(g.review)}</span>`:""}${safeUrl(g.link)?`<a href="${esc(safeUrl(g.link))}" target="_blank" rel="noopener noreferrer">Shop it</a>`:""}</div>`).join("")}
+      ${(p.plugs||[]).map(g=>{ const shop=safeUrl(g.link)||google([g.brand,g.label].filter(Boolean).join(" ")); return `<div class="plugcard"><b class="small">${esc(g.label)}${g.brand?` <span class="muted">· ${esc(g.brand)}</span>`:""}</b>${g.review?`<span class="small">${esc(g.review)}</span>`:""}<a href="${esc(shop)}" target="_blank" rel="noopener noreferrer">Shop it</a></div>`; }).join("")}
       <div class="row"><button class="heart ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}">${h.mine?ICON.heartFill:ICON.heart}${h.count||""}</button><span class="spacer"></span>
       ${p.user_id===S.uid?`<button class="link small" data-act="removePost" data-id="${esc(p.id)}">Remove post</button>`:""}</div></div></article>`;
   }
@@ -719,7 +719,8 @@ document.addEventListener("input", e=>{
   else if(t.id==="detail"&&S.flow) S.flow.detail=t.value;
   else if(t.dataset.itemI!=null){ curFit().items[t.dataset.itemI].label=t.value; $("#saveItemsBtn").hidden=false; }
   else if(t.id==="caption"&&S.share) S.share.caption=t.value;
-  else if(t.dataset.plugI!=null&&S.share) S.share.plugs[t.dataset.plugI][t.dataset.field]=t.value;
+  else if(t.dataset.plugI!=null&&S.share){ S.share.plugs[t.dataset.plugI][t.dataset.field]=t.value;
+    if(t.dataset.field==="brand"){ const it=curFit()?.items?.[t.dataset.plugI]; const hint=t.parentElement?.querySelector("p.small"); if(hint&&it) hint.textContent=`Friends get a Shop it button that searches for ${[t.value.trim(),it.label].filter(Boolean).join(" ")}.`; } }
   else if(t.id==="blurSize"&&S.share){ S.share.blur.r=Number(t.value)/100; drawShare(); }
   else if(t.id==="codeIn") S.codeIn=t.value;
   else if(t.id==="handleIn") S.handleIn=t.value;
@@ -734,7 +735,7 @@ document.addEventListener("change", e=>{
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
   else if(t.id==="mergeTo") { S.mergeTo=t.value; render(); }
   else if(t.id==="blurOn"&&S.share){ S.share.blur.on=t.checked; render(); }
-  else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn; if(t.checked) S.share.plugs[i]={link:"",review:""}; else delete S.share.plugs[i]; render(); }
+  else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn; if(t.checked) S.share.plugs[i]={brand:(curFit()?.items?.[i]?.brand)||"",review:""}; else delete S.share.plugs[i]; render(); }
 });
 
 /* ---------- boot ---------- */
