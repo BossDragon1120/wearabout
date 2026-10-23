@@ -188,9 +188,11 @@ async function submitAuth(){
 
 /* --- home --- */
 const badgeChips = list => (list&&list.length) ? `<div class="badges">${list.map(n=>`<span class="bdg">${badgeIcon(n)} ${esc(n)}</span>`).join("")}</div>` : "";
+const GOAL_IDEAS = ["Executive","Polished","Minimalist","Classic","Sporty","Streetwear","Artsy","Edgy","Feminine","Romantic","Bohemian","Preppy","More color"];
 function goalRow(){
   if(S.goalEdit) return `<div class="goalrow editing"><label for="goalIn" class="small" style="font-weight:600">Your style goal</label>
     <div class="row" style="flex-wrap:nowrap"><input class="input" id="goalIn" maxlength="40" value="${esc(S.goalIn ?? S.goal)}" placeholder="e.g. more executive, sportier, more color"><button class="btn sm primary" data-act="saveGoal">Save</button></div>
+    <div class="chipgrid goalideas">${GOAL_IDEAS.map(g=>`<button class="chip ${String(S.goalIn ?? S.goal).toLowerCase()===g.toLowerCase()?"on":""}" data-act="pickGoal" data-goal="${esc(g)}">${esc(g)}</button>`).join("")}</div>
     <p class="small muted">Counts for 10% of each new fit's score.${S.goal?` <button class="link small" data-act="clearGoal">Remove goal</button>`:""}</p></div>`;
   return `<div class="goalrow">🧭 <span>${S.goal?`Style goal: <b>${esc(S.goal)}</b>`:"Add a style goal to your score"}</span><button class="link small" data-act="editGoal">${S.goal?"Edit":"Set one"}</button></div>`;
 }
@@ -532,6 +534,7 @@ const ACT = {
     render(); },
   addBack:async t=>{ try{ await addFriend(t.dataset.uid); toast("You're now friends"); }catch{ toast("Couldn't add them back."); } render(); },
   signOut:async()=>{ await sb.auth.signOut(); },
+  pickGoal:t=>{ S.goalIn=t.dataset.goal; render(); },
   editGoal:()=>{ S.goalEdit=true; S.goalIn=null; render(); setTimeout(()=>$("#goalIn")?.focus(),0); },
   saveGoal:async()=>{ const goal=String(S.goalIn ?? S.goal).trim().slice(0,40);
     const { error } = await sb.from("user_settings").upsert({user_id:S.uid, style_goal:goal, updated_at:new Date().toISOString()});

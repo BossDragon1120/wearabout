@@ -185,3 +185,6 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .badges{display:flex;flex-wrap:wrap;gap:6px}
 .bdg{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;background:var(--gold-soft);border:1px solid var(--gold);font-size:13px;font-weight:600;color:var(--score-ink)}
 .bpill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 7px;font-size:12px;background:var(--gold-soft);letter-spacing:1px}
+.goalideas{gap:6px;margin-top:2px}
+.goalideas .chip{padding:5px 10px;font-size:12px}
+.goalideas .chip:not(.on),.goalrow .input{color:var(--ink)}
