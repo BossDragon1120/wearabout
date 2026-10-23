@@ -98,6 +98,8 @@ async function callFn(name, payload, asBlob=false){
   return asBlob ? res.blob() : res.json();
 }
 async function loadMine(){
+  // Photo links are signed for 6 hours; start fresh after 5 so a long-open app never shows broken images.
+  if(!S.urlsAt || Date.now()-S.urlsAt > 5*3600e3){ S.urls={}; S.urlsAt=Date.now(); }
   const [f,r,p,g,c] = await Promise.all([
     sb.from("fits").select("*").order("created_at",{ascending:false}).limit(1000),
     sb.from("saved_recs").select("*").order("created_at",{ascending:false}),
@@ -274,7 +276,7 @@ async function startFlow(file){
     analysis:null, analysisErr:"", comps:{}, compState:{}, bg:null, bgErr:"", saving:false};
   S.flow=f; S.view="flow"; render(); scrollTo(0,0);
   try {
-    const r=await callFn("wear-about",{action:"guess", image:b64});
+    const r=await callFn("wear-about",{action:"guess", image:await base64(await toBlob(scaled(img,800),"image/jpeg",.8))});
     if(r.category){ f.guess=r.category; f.guessConf=r.confidence; if(!f.cat) f.cat=r.category; } else f.guessErr="Couldn't tell the occasion.";
   } catch(e){ f.guessErr=e.message; }
   f.guessing=false; if(S.flow===f && f.step==="occasion") render();
@@ -306,9 +308,10 @@ async function saveFit(share=false){
     const id=crypto.randomUUID(), base=`${S.uid}/${id}`, a=f.analysis&&f.analysis.score!=null?f.analysis:null;
     const main=f.comps[f.bg].blob, thumb=await jpeg(main,420,.8);
     const up=(path,blob)=>sb.storage.from("fits").upload(path,blob,{contentType:"image/jpeg",upsert:false}).then(r=>{ if(r.error) throw r.error; });
-    await Promise.all([up(base+".jpg",main), up(base+"-thumb.jpg",thumb), up(base+"-orig.jpg",f.origBlob)]);
+    const sameAsOrig = f.bg==="original";
+    await Promise.all([up(base+".jpg",main), up(base+"-thumb.jpg",thumb), sameAsOrig?null:up(base+"-orig.jpg",f.origBlob)]);
     const row={id, local_date:localDate(), category:f.cat, detail:f.detail||"", bg_choice:f.bg,
-      image_path:base+".jpg", thumb_path:base+"-thumb.jpg", orig_path:base+"-orig.jpg",
+      image_path:base+".jpg", thumb_path:base+"-thumb.jpg", orig_path:sameAsOrig?base+".jpg":base+"-orig.jpg",
       score:a?a.score:null, analysis:a?{dims:a.dims,low:a.low,review:a.review,tweak:a.tweak,buy:a.buy,badges:a.badges||[],goal:a.goal||""}:null, items:a?a.items:[]};
     row.items = await linkItems(row.items);
     const { data, error } = await sb.from("fits").insert(row).select().single();
@@ -586,9 +589,9 @@ function viewCloset(){
 const curItem=()=>S.closet.find(c=>c.id===S.itemId);
 function viewItem(){
   const c=curItem(); if(!c) return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><p class="muted">This piece isn't in your closet anymore.</p>`;
-  const e=closetStats()[c.id]||{count:0,fits:[]}, ed=S.itemEdit||{};
+  const stAll=closetStats(), e=stAll[c.id]||{count:0,fits:[]}, ed=S.itemEdit||{};
   const fits=e.fits.map(id=>S.fits.find(f=>f.id===id)).filter(Boolean);
-  const others=S.closet.filter(o=>o.id!==c.id && closetStats()[o.id]).sort((a,b)=>((a.type===c.type)?0:1)-((b.type===c.type)?0:1)||a.label.localeCompare(b.label));
+  const others=S.closet.filter(o=>o.id!==c.id && stAll[o.id]).sort((a,b)=>((a.type===c.type)?0:1)-((b.type===c.type)?0:1)||a.label.localeCompare(b.label));
   return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><div class="stack" style="gap:18px">
     <div><span class="tag">${esc(TYPE_LABEL[c.type]||"Other")}</span><h2 style="margin-top:4px">${esc(c.label)}</h2>
       <p class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</p></div>
@@ -754,7 +757,7 @@ async function onSession(session){
   S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home";
   if(!uid){ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); return; }
   render();
-  try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Pull to refresh."); }
+  try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
   S.loaded=true; render();
   backfillCloset().then(()=>softRender(["closet","item","fit"])).catch(console.error);
   loadSocial().then(()=>softRender(["feed","friends"])).catch(console.error);
