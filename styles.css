@@ -213,3 +213,4 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .status .dot{margin-top:7px}
 .savebar{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .savebar .btn{width:100%}
+.item .notcloset{grid-column:1/-1;margin-top:-4px}

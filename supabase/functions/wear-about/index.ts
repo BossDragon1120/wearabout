@@ -69,11 +69,11 @@ ${goal ? `- goal: how well the outfit moves toward the user's own style goal, "$
 "buy": null, or {"item": the kind of item, described specifically without inventing a brand, "why": at most 25 words, "search": a 3-7 word Google search for it}.
 "review": one or two warm, specific sentences on what works.
 "badges": 0 to 3 badges from this exact list, only when clearly earned (many outfits earn none): ${badgeNames(goal).join(", ")}.${goal ? ` "On goal" means the outfit clearly delivers on "${goal}".` : ""}
-"items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")} (use "jacket" for jackets, blazers, shackets and cardigans worn open; "outerwear" for coats, parkas and puffers), "brand": a string only if you are confident, else null}.
+"items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")} (use "jacket" for jackets, blazers, shackets and cardigans worn open; "outerwear" for coats, parkas and puffers), "brand": a string only if you are confident, else null, "clear": true only if the whole piece is plainly visible and you are certain of its type, color and material; false if it is partly hidden (for example shoes under long pants), cropped, blurry, in shadow, or you are unsure}.
 If no outfit is visible, reply {"error":"<short reason>"} instead.${closet}
 
 Reply with only JSON in this shape:
-{"dims":{"occasion_fit":{"score":8,"note":"..."},"cohesion":{"score":7.5,"note":"..."},"proportion":{"score":7,"note":"..."},"color":{"score":8,"note":"..."},"details":{"score":6.5,"note":"..."}${goal ? ',"goal":{"score":7,"note":"..."}' : ""}},"review":"...","badges":[],"tweak":{"title":"...","detail":"...","dimension":"details"},"buy":null,"items":[{"label":"...","type":"top","brand":null${closet ? ',"match":null' : ""}}]}`;
+{"dims":{"occasion_fit":{"score":8,"note":"..."},"cohesion":{"score":7.5,"note":"..."},"proportion":{"score":7,"note":"..."},"color":{"score":8,"note":"..."},"details":{"score":6.5,"note":"..."}${goal ? ',"goal":{"score":7,"note":"..."}' : ""}},"review":"...","badges":[],"tweak":{"title":"...","detail":"...","dimension":"details"},"buy":null,"items":[{"label":"...","type":"top","brand":null,"clear":true${closet ? ',"match":null' : ""}}]}`;
 
 function parseJson(text: string) {
   try { return JSON.parse(text); } catch { /* fall through */ }
@@ -106,6 +106,7 @@ function normalize(a: any, goal: string, refMap: Record<string, string> = {}) {
   // deno-lint-ignore no-explicit-any
   const items = Array.isArray(a.items) ? a.items.filter((i: any) => i && i.label).slice(0, 20).map((i: any) => ({
     label: String(i.label).slice(0, 80), type: ITEM_TYPES.includes(i.type) ? i.type : "other", brand: i.brand ? String(i.brand).slice(0, 40) : null,
+    clear: i.clear === true,
     match: refMap[String(i.match ?? "")] ?? null,
   })) : [];
   // One closet piece can only be worn once per outfit: keep the first match, drop repeats.

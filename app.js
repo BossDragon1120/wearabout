@@ -343,7 +343,8 @@ function viewFit(){
     <div class="items">${(x.items||[]).map((it,i)=>`<div class="item">
       <input class="input" data-item-i="${i}" aria-label="Item ${i+1} label" value="${esc(it.label)}">
       <select data-item-type="${i}" aria-label="Item ${i+1} type">${ITEM_TYPES.map(t=>`<option ${t===it.type?"selected":""}>${t}</option>`).join("")}</select>
-      <button class="iconbtn" data-act="removeItem" data-i="${i}" aria-label="Remove item">${ICON.x}</button></div>`).join("")||`<p class="small muted">No items listed.</p>`}</div>
+      <button class="iconbtn" data-act="removeItem" data-i="${i}" aria-label="Remove item">${ICON.x}</button>
+      ${S.closetReady&&it.item_id===null&&it.label?`<span class="notcloset small muted">Not in closet${it.clear===false?" (not fully visible)":""} · <button class="link small" data-act="addToCloset" data-i="${i}">Add to closet</button></span>`:""}</div>`).join("")||`<p class="small muted">No items listed.</p>`}</div>
     <div class="row"><button class="btn sm" data-act="addItem">Add item</button><button class="btn sm primary" data-act="saveItems" id="saveItemsBtn" hidden>Save changes</button></div></div>
     <div class="row" style="gap:10px"><button class="btn" data-act="share">Share with friends</button><span class="spacer"></span><button class="btn ghost sm" data-act="deleteFit">Delete fit</button></div>
     ${S.confirmDel?`<div class="confirm"><span class="small" style="flex:1;min-width:160px">Delete this fit for good? It also leaves your streak history.</span><button class="btn sm" data-act="cancelDelete">Keep</button><button class="btn sm primary" data-act="confirmDelete">Delete</button></div>`:""}
@@ -528,6 +529,8 @@ async function linkItems(items){
     if(it.item_id && ids.has(it.item_id)) return it;
     const match = it.match && ids.has(it.match) ? it.match : null;
     if(match){ const {match:_, ...rest}=it; return {...rest, item_id:match}; }
+    // Only clearly visible pieces become new closet entries; the rest stay on the fit only.
+    if(it.clear!==true){ const {match:_, ...rest}=it; return {...rest, item_id:null}; }
     const id=crypto.randomUUID(); fresh.push({id, label:String(it.label).slice(0,80)||"Item", type:ITEM_TYPES.includes(it.type)?it.type:"other", brand:it.brand||null});
     const {match:_, ...rest}=it; return {...rest, item_id:id};
   });
@@ -645,6 +648,10 @@ const ACT = {
   filterBest:()=>{ S.filter.best=!S.filter.best; render(); },
   filterCat:t=>{ const c=t.dataset.cat||null; S.filter.cat=S.filter.cat===c?null:c; render(); },
   openFit:t=>openFit(t.dataset.id, t.dataset.from||"home"),
+  addToCloset:async t=>{ const x=curFit(); const it=x&&x.items[t.dataset.i]; if(!it) return;
+    try { const [linked]=await linkItems([{...it, item_id:undefined, clear:true}]); x.items[t.dataset.i]=linked;
+      const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); if(error) throw error; render(); toast("Added to closet"); }
+    catch(e){ console.error(e); toast("Couldn't add it. Try again."); } },
   closetSort:t=>{ S.closetSort=t.dataset.sort; render(); },
   openItem:t=>{ S.itemId=t.dataset.id; S.itemEdit=null; S.mergeTo=""; S.confirmRemove=false; S.view="item"; render(); scrollTo(0,0); },
   saveItem:()=>saveClosetItem(),
@@ -660,7 +667,7 @@ const ACT = {
   saveFit:()=>saveFit(false),
   saveShare:()=>saveFit(true),
   recFb:t=>recFeedback(t.dataset.kind,t.dataset.val),
-  addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null}]; render(); $("#saveItemsBtn").hidden=false; const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
+  addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null,clear:true}]; render(); $("#saveItemsBtn").hidden=false; const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
   removeItem:t=>{ const x=curFit(); x.items=x.items.filter((_,i)=>i!=t.dataset.i); render(); $("#saveItemsBtn").hidden=false; },
   saveItems:async()=>{ const x=curFit(); x.items=(x.items||[]).filter(i=>i.label.trim()).map(i=>({...i,label:i.label.trim()}));
     try { x.items=await linkItems(x.items); } catch(e){ console.error(e); }
