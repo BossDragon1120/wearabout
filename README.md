@@ -45,7 +45,7 @@ GitHub Pages can only host the app's screens; it can't run code that holds secre
    | `ANTHROPIC_API_KEY` | your Anthropic key |
 
    Optional: `BACKDROP_DAILY_LIMIT` (default 40 images per person per day), `STYLE_DAILY_LIMIT` (default 60), `CLAUDE_MODEL` (default `claude-sonnet-5-5`), `CLAUDE_FAST_MODEL` (default `claude-haiku-5-5`), `PHOTOROOM_BG_MODEL` (e.g. `background-studio-beta-2025-03-17`).
-2. **Edge Functions → Deploy a new function → Via Editor**. Name it exactly `wear-about` (Supabase adds the hyphen), replace the sample code with everything in [`supabase/functions/wear-about/index.ts`](supabase/functions/wear-about/index.ts), and deploy. Leave "Verify JWT" on.
+2. **Edge Functions → Deploy a new function → Via Editor**. Name it exactly `wear-about` (Supabase adds the hyphen), replace the sample code with everything in [`supabase/functions/wear-about/index.ts`](supabase/functions/wear-about/index.ts), and deploy. Then open the function's settings and turn **off** "Verify JWT" (projects with the newer `sb_publishable_` keys reject sign-ins with it on). The function checks sign-in itself, so it stays protected.
 
 Command line instead: `supabase functions deploy wear-about`, then `supabase secrets set PHOTOROOM_API_KEY=... ANTHROPIC_API_KEY=...`.
 
