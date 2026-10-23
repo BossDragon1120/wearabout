@@ -188,3 +188,6 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .goalideas{gap:6px;margin-top:2px}
 .goalideas .chip{padding:5px 10px;font-size:12px}
 .goalideas .chip:not(.on),.goalrow .input{color:var(--ink)}
+/* iPhone Safari zooms in on any text field under 16px and stays zoomed; keep all fields at 16px */
+.input,textarea.input,select,.item select,.goalrow .input{font-size:16px}
+.codeinput{font-size:28px}
