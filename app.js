@@ -4,7 +4,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 
 const CONFIGURED = !/YOUR-PROJECT|YOUR-ANON-KEY/.test(SUPABASE_URL + SUPABASE_ANON_KEY);
 const sb = CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 }) : null;
 
 /* ---------- constants ---------- */
@@ -168,7 +168,7 @@ function viewAuth(){
         <input class="input" id="authEmail" type="email" autocomplete="email" inputmode="email" value="${esc(a.email)}" placeholder="you@example.com" required></div>
       <button class="btn primary block" type="submit" ${a.busy?"disabled":""}>${a.busy?"Sending…":"Email me a sign-in code"}</button>`
     : `
-      <p>We sent a code to <b>${esc(a.email)}</b>. Enter it here.</p>
+      <p>We sent a code to <b>${esc(a.email)}</b>. Enter it here. If the email has a sign-in link instead, tapping it signs you in too.</p>
       <div class="field"><label for="authCode">Sign-in code</label>
         <input class="input codeinput" id="authCode" inputmode="numeric" autocomplete="one-time-code" maxlength="8" value="${esc(a.code)}" required></div>
       <button class="btn primary block" type="submit" ${a.busy?"disabled":""}>${a.busy?"Checking…":"Sign in"}</button>
@@ -182,7 +182,8 @@ async function submitAuth(){
   try{
     if(a.step==="email"){
       const email=a.email.trim(); if(!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
-      const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser:true } });
+      // If the email arrives as a link instead of a code, send it back to this exact app address.
+      const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser:true, emailRedirectTo: location.origin + location.pathname } });
       if(error) throw error;
       a.email=email; a.step="code";
     } else {
