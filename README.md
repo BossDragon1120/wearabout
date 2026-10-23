@@ -3,11 +3,11 @@
 Snap your outfit, say where you're going, and get it back on a clean studio or themed backdrop with a style score, one tweak and (only when it's worth it) one buy rec. Keep a daily streak and share fits with mutual friends.
 
 - **App:** plain HTML/JS, hosted free on GitHub Pages, installable to your home screen.
-- **Supabase:** sign-in (emailed code), database, private photo storage, and two server functions.
+- **Supabase:** sign-in (emailed code), database, private photo storage, and one server function.
 - **Photoroom:** cuts you out of the photo and builds the backdrop.
 - **Claude (Anthropic API):** guesses the occasion, scores the fit, writes the recs and lists the items.
 
-Your Photoroom and Anthropic keys live only in Supabase's server functions, never in the app.
+Your Photoroom and Anthropic keys live only in Supabase's server function, never in the app.
 
 ## One-time setup (about 30 minutes)
 
@@ -35,19 +35,19 @@ Your Photoroom and Anthropic keys live only in Supabase's server functions, neve
 1. Create an account at [console.anthropic.com](https://console.anthropic.com), add a payment method, and create an API key.
 2. Each fit costs roughly 1 to 3 cents.
 
-### 4. Server functions
-In Supabase, open **Edge Functions → Deploy a new function → Via Editor**:
-1. Name it `backdrop`, paste [`supabase/functions/backdrop/index.ts`](supabase/functions/backdrop/index.ts), deploy.
-2. Name it `style-fit`, paste [`supabase/functions/style-fit/index.ts`](supabase/functions/style-fit/index.ts), deploy.
-3. **Edge Functions → Secrets**, add:
+### 4. Server function
+GitHub Pages can only host the app's screens; it can't run code that holds secret keys. That part lives in Supabase as one function.
+
+1. **Edge Functions → Secrets**, add:
    | Name | Value |
    | --- | --- |
    | `PHOTOROOM_API_KEY` | your Photoroom key |
    | `ANTHROPIC_API_KEY` | your Anthropic key |
 
-   Optional: `BACKDROP_DAILY_LIMIT` (default 40 images per person per day), `STYLE_DAILY_LIMIT` (default 60), `CLAUDE_MODEL` (default `claude-sonnet-5-5`), `CLAUDE_FAST_MODEL` (default `claude-haiku-5-5`), `PHOTOROOM_BG_MODEL` (e.g. `background-studio-beta-2025-03-17` to try Photoroom's studio background model).
+   Optional: `BACKDROP_DAILY_LIMIT` (default 40 images per person per day), `STYLE_DAILY_LIMIT` (default 60), `CLAUDE_MODEL` (default `claude-sonnet-5-5`), `CLAUDE_FAST_MODEL` (default `claude-haiku-5-5`), `PHOTOROOM_BG_MODEL` (e.g. `background-studio-beta-2025-03-17`).
+2. **Edge Functions → Deploy a new function → Via Editor**. Name it exactly `wearabout`, replace the sample code with everything in [`supabase/functions/wearabout/index.ts`](supabase/functions/wearabout/index.ts), and deploy. Leave "Verify JWT" on.
 
-If you prefer the command line: `supabase functions deploy backdrop` and `supabase functions deploy style-fit` from this folder, then `supabase secrets set PHOTOROOM_API_KEY=... ANTHROPIC_API_KEY=...`.
+Command line instead: `supabase functions deploy wearabout`, then `supabase secrets set PHOTOROOM_API_KEY=... ANTHROPIC_API_KEY=...`.
 
 ### 5. GitHub Pages
 In this repo: **Settings → Pages → Build and deployment → Deploy from a branch**, branch `main`, folder `/ (root)`. Your app appears at `https://bossdragon1120.github.io/wearabout/` within a minute or two.
@@ -65,8 +65,7 @@ Send them the app link. They sign up with their email, then you each add the oth
 | `config.js` | Supabase address and public key |
 | `manifest.webmanifest`, `sw.js`, `icons/` | Home-screen install and offline shell |
 | `supabase/schema.sql` | Tables, privacy rules and photo storage |
-| `supabase/functions/backdrop` | Photoroom cut-out and backdrops |
-| `supabase/functions/style-fit` | Claude occasion guess, score, recs and items |
+| `supabase/functions/wearabout` | The one server function: Claude scoring and Photoroom backdrops |
 
 ## Product principles (built into the prompts)
 1. **Never make things up.** Brands only when visible and certain; otherwise a plain description.

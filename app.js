@@ -258,7 +258,7 @@ async function startFlow(file){
     analysis:null, analysisErr:"", comps:{}, compState:{}, bg:null, bgErr:"", saving:false};
   S.flow=f; S.view="flow"; render(); scrollTo(0,0);
   try {
-    const r=await callFn("style-fit",{action:"guess", image:b64});
+    const r=await callFn("wearabout",{action:"guess", image:b64});
     if(r.category){ f.guess=r.category; f.guessConf=r.confidence; if(!f.cat) f.cat=r.category; } else f.guessErr="Couldn't tell the occasion.";
   } catch(e){ f.guessErr=e.message; }
   f.guessing=false; if(S.flow===f && f.step==="occasion") render();
@@ -270,7 +270,7 @@ function runStyle(){
   render(); scrollTo(0,0);
   if(!f.keepBg) for(const mode of ["studio","themed"]){
     f.compState[mode]="loading";
-    callFn("backdrop",{mode, image:f.b64, category:f.cat, detail:f.detail},true)
+    callFn("wearabout",{action:"backdrop", mode, image:f.b64, category:f.cat, detail:f.detail},true)
       .then(blob=>jpeg(blob,1440,.9))
       .then(blob=>{ f.comps[mode]={blob,url:URL.createObjectURL(blob)}; f.compState[mode]="ok"; if(!f.bg||(f.bg==="original"&&!f.pickedBg)) f.bg=mode; })
       .catch(e=>{ f.compState[mode]="failed"; f.bgErr=e.message; if(!f.bg && f.compState.studio==="failed" && f.compState.themed==="failed") f.bg="original"; })
@@ -280,7 +280,7 @@ function runStyle(){
 }
 async function runAnalysis(f){
   f.analysis="loading"; if(S.flow===f) render();
-  try { f.analysis=await callFn("style-fit",{action:"analyze", image:f.b64, category:f.cat, detail:f.detail, goal:S.goal||""}); }
+  try { f.analysis=await callFn("wearabout",{action:"analyze", image:f.b64, category:f.cat, detail:f.detail, goal:S.goal||""}); }
   catch(e){ f.analysis={score:null}; f.analysisErr=e.message; }
   if(S.flow===f && S.view==="flow") render();
 }
