@@ -205,3 +205,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .grid.g3 .cbody{padding:6px 8px 8px}
 .grid.g3 .pills{display:none}
 .grid.g3 .cdate{font-size:11px}
+.bgopt .ph.loading{background:linear-gradient(100deg,var(--chip) 30%,var(--surface) 50%,var(--chip) 70%);background-size:220% 100%;animation:shimmer 1.4s linear infinite}
+@keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+@media (prefers-reduced-motion:reduce){.bgopt .ph.loading{animation:none}}
+.status small{font-size:12px}
+.status{align-items:flex-start}
+.status .dot{margin-top:7px}

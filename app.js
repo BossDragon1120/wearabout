@@ -239,12 +239,18 @@ function viewFlow(){
       <label class="keepbg"><input type="checkbox" id="keepBg" ${f.keepBg?"checked":""}> Keep my own background</label>
       <button class="btn primary block" data-act="runStyle" ${f.cat?"":"disabled"}>Style this fit</button></div>`;
   } else {
-    const a=f.analysis, bothFailed=f.compState.studio==="failed"&&f.compState.themed==="failed";
-    const tiles=f.keepBg?[["original","Original"]]:[["studio","Studio"],["themed","Themed"],["original","Original"]];
+    const a=f.analysis;
+    const tiles=f.keepBg?[["original","Original"]]:[["original","Original"],["studio","Studio"],["themed","Themed"]];
+    const modes=["studio","themed"], ready=modes.filter(m=>f.compState[m]==="ok").length, failed=modes.filter(m=>f.compState[m]==="failed"), pending=modes.length-ready-failed.length;
+    const errText=[...new Set(failed.map(m=>(f.errs||{})[m]).filter(Boolean))].join(" ");
+    const bgStatus = f.keepBg ? "" : `<div class="status"><span class="dot ${pending?"live":failed.length?"":"ok"}"></span><span>${
+      pending ? `Building your backdrops… ${ready} of 2 ready` :
+      failed.length===2 ? `Backdrops didn't work this time. You can save the original.` :
+      failed.length ? `${failed[0]==="studio"?"Studio":"Themed"} backdrop didn't work. The others are ready.` : "Backdrops ready."}${errText?`<br><small class="muted">${esc(errText)}</small>`:""}</span></div>`;
     out+=`<div class="stack">
       <div><h2>${f.keepBg?"Your fit":"Pick a backdrop"}</h2><p class="small muted">${CAT_EMOJI[f.cat]||""} ${esc(f.cat)}${f.detail?" · "+esc(f.detail):""}</p></div>
       <div class="bgpick" style="grid-template-columns:repeat(${tiles.length},minmax(0,1fr))${f.keepBg?";max-width:300px":""}">${tiles.map(([k,l])=>bgTile(k,l)).join("")}</div>
-      ${bothFailed?`<p class="small muted">${esc(f.bgErr||"Backdrops didn't work this time.")} You can still save the original.</p>`:""}
+      ${bgStatus}
       <div class="status"><span class="dot ${a==="loading"?"live":a&&a.score!=null?"ok":""}"></span>
         <span>${a==="loading"?"Scoring your fit and picking recs…":a&&a.score!=null?"Score and recs ready.":"Couldn't score this fit: "+esc(f.analysisErr||"")}</span>
         ${a&&a!=="loading"&&a.score==null?`<button class="link" data-act="retryAnalysis">Try again</button>`:""}</div>
@@ -257,7 +263,7 @@ function viewFlow(){
 function bgTile(key,label){
   const f=S.flow, c=f.comps[key], st=f.compState[key];
   const inner = c ? `<img src="${c.url}" alt="${label} option">` :
-    `<div class="ph">${st==="failed" ? "Couldn't make this one."+(f.errs&&f.errs[key]?`<br><small>${esc(f.errs[key])}</small>`:"") : key==="themed" ? "Building your scene…" : "Cutting you out…"}</div>`;
+    st==="failed" ? `<div class="ph">Couldn't make this one</div>` : `<div class="ph loading" aria-label="${label} backdrop loading"></div>`;
   return `<button class="bgopt ${f.bg===key?"on":""}" data-act="pickBg" data-bg="${key}" ${c?"":"disabled"} aria-pressed="${f.bg===key}">${inner}<span>${label}</span></button>`;
 }
 async function startFlow(file){
