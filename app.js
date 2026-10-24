@@ -305,7 +305,7 @@ function viewFlow(){
   let out=`<button class="back" data-act="cancelFlow">${ICON.back} Cancel</button>`;
   if(f.step==="occasion"){
     out+=`<div class="stack">
-      <img class="photo" src="${f.origUrl}" alt="Your outfit photo">
+      <div class="photowrap"><img class="photo" src="${f.origUrl}" alt="Your outfit photo"><button class="btn sm changephoto" data-act="changePhoto">Change photo</button></div>
       <div class="stack" style="gap:8px"><h2>What's it for?</h2>
         <p class="small muted">${f.guessing?"Reading your outfit…":f.guess?`Best guess: <b>${esc(f.guess)}</b>${f.guessConf==="low"?" (not sure)":""}. Tap another if it's wrong.`:f.guessErr?esc(f.guessErr)+" Pick one below.":"Pick the occasion."}</p></div>
       <div class="chipgrid">${CATS.map(c=>`<button class="chip ${f.cat===c?"on":""} ${f.guess===c&&f.cat!==c?"guess":""}" data-act="pickCat" data-cat="${esc(c)}">${CAT_EMOJI[c]} ${esc(c)}</button>`).join("")}</div>
@@ -368,13 +368,16 @@ function bgTile(key,label){
   return `<button class="bgopt ${f.bg===key?"on":""}" data-act="pickBg" data-bg="${key}" ${c?"":"disabled"} aria-pressed="${f.bg===key}">${inner}<span>${label}</span></button>`;
 }
 async function startFlow(file){
+  // "Change photo" on the occasion step: keep the occasion you picked yourself, your details and the backdrop choice.
+  const prev = S.replacing && S.flow && S.flow.step==="occasion" ? S.flow : null; S.replacing=false;
   if(!file) return;
   let img; try { img=await blobImage(file); } catch { toast("That file isn't a photo WearAbout can read."); return; }
   const origBlob=await toBlob(scaled(img,1600),"image/jpeg",.88), origUrl=URL.createObjectURL(origBlob), b64=await base64(origBlob);
   // Claude shrinks anything bigger than about 1.2 megapixels anyway, so send it a lighter copy.
   const aiB64=await base64(await toBlob(scaled(img,1280),"image/jpeg",.85));
   if(S.flow && S.flow.origUrl) URL.revokeObjectURL(S.flow.origUrl);
-  const f={step:"occasion", origBlob, origUrl, b64, aiB64, guess:null, guessConf:null, guessing:true, guessErr:null, cat:null, detail:"",
+  const keepCat = prev && prev.cat && prev.cat!==prev.guess ? prev.cat : null;
+  const f={step:"occasion", origBlob, origUrl, b64, aiB64, guess:null, guessConf:null, guessing:true, guessErr:null, cat:keepCat, detail:prev?prev.detail:"", keepBg:prev?!!prev.keepBg:false,
     analysis:null, analysisErr:"", comps:{}, compState:{}, bg:null, bgErr:"", saving:false};
   S.flow=f; S.view="flow"; render(); scrollTo(0,0);
   try {
@@ -870,7 +873,8 @@ document.addEventListener("touchend",()=>{
 const ACT = {
   nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.confirmDel=false; render(); scrollTo(0,0);
     if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
-  log:()=>{ const i=$("#photoIn"); i.value=""; i.click(); },
+  log:()=>{ S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
+  changePhoto:()=>{ S.replacing=true; const i=$("#photoIn"); i.value=""; i.click(); },
   filterBest:()=>{ S.filter.best=!S.filter.best; render(); },
   filterCat:t=>{ const c=t.dataset.cat||null; S.filter.cat=S.filter.cat===c?null:c; render(); },
   openFit:t=>openFit(t.dataset.id, t.dataset.from||"home"),
