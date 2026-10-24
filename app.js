@@ -532,7 +532,7 @@ const firstName = id => displayName(id).split(/\s+/)[0];
 const yourTopic = t => t.replace(/^my\b/i,"your");
 function chatLinks(p){
   const phone=S.phones&&S.phones[p.user_id]; if(!phone) return null;
-  const msg=`Hi ${firstName(p.user_id)}! Saw your fit 💛 Tell me all about ${yourTopic(p.chat_topic)}!`;
+  const msg=`Hi ${firstName(p.user_id)}! 👋 Loved your ${p.category==="Casual/Hangout"?"":p.category+" "}fit ${CAT_EMOJI[p.category]||"💛"} Tell me all about ${yourTopic(p.chat_topic)}! 😊`;
   const sep=/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)?"&":"?";
   return { text:`sms:${phone}${sep}body=${encodeURIComponent(msg)}`, call:`tel:${phone}` };
 }
@@ -1179,7 +1179,7 @@ const ACT = {
   invite:async()=>{
     const code=S.profile&&S.profile.friend_code; if(!code) return;
     const name=(S.profile.handle||"").trim(), link=`${APP_URL}?invite=${code}`;
-    const text=`${name?name+" invites you to join WearAbout":"Join me on WearAbout"}: log your outfits, get a style score, and share fits with friends. Sign up here: ${link} (my friend code is ${code})`;
+    const text=`👋 Hi! ${name?"It's "+name+". ":""}I've been logging my outfits on WearAbout and I'd love for you to join me 💛 Snap your fit, get a style score, and share your best looks with friends. Sign up here: ${link} (my friend code is ${code}) ✨`;
     try { if(navigator.share){ await navigator.share({title:"WearAbout", text}); return; } } catch(e){ if(e && e.name==="AbortError") return; }
     try { await navigator.clipboard.writeText(text); toast("Invite copied. Paste it into a message."); } catch { toast("Your link: "+link); }
   },
