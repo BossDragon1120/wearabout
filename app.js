@@ -70,7 +70,7 @@ function toast(msg, undo){
   const t=$("#toast"); t.textContent=msg;
   if(undo){ const b=document.createElement("button"); b.className="toast-undo"; b.textContent="Undo";
     b.onclick=()=>{ t.hidden=true; Promise.resolve(undo()).catch(()=>toast("Couldn't undo. Try again.")); }; t.append(b); }
-  t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, undo?5000:2800);
+  t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, undo?5000:msg.length>45?4200:2800);
 }
 const url = (bucket,path) => S.urls[bucket+":"+path] || "";
 const me = () => S.uid;
@@ -382,7 +382,9 @@ async function saveFit(share=false){
       image_path:base+".jpg", thumb_path:base+"-thumb.jpg", orig_path:sameAsOrig?base+".jpg":base+"-orig.jpg",
       score:a?a.score:null, analysis:a?{dims:a.dims,low:a.low,review:a.review,tweak:a.tweak,buy:a.buy,buyOff:!!a.buyOff,badges:a.badges||[],goal:a.goal||""}:null, items:a?a.items:[],
       rec_fb:a?(f.recFb||{}):{}};
+    const known=new Set(S.closet.map(c=>c.id));
     row.items = await linkItems(row.items);
+    const added=new Set(row.items.map(i=>i.item_id).filter(id=>id && !known.has(id))).size;
     const { data, error } = await sb.from("fits").insert(row).select().single();
     if(error) throw error;
     makeCrops(data, f.origBlob).catch(e=>console.error("crops",e));
@@ -390,7 +392,8 @@ async function saveFit(share=false){
     Promise.all(["tweak","buy"].filter(kind=>a && (f.recFb||{})[kind]==="up").map(kind=>saveIdea(data, kind).catch(console.error)))
       .then(()=>softRender(["saved"]));
     S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
-    const n=streakInfo().n; toast(n>1?`Saved to your Fits · ${n}-day streak`:"Saved to your Fits · streak started");
+    const n=streakInfo().n, newNote=added?` · ${added} new piece${added===1?"":"s"} in your Closet`:"";
+    toast((n>1?`Saved · ${n}-day streak`:"Saved · streak started")+newNote);
     if(share) await openShare();
   } catch(e){ console.error(e); f.saving=false; render(); toast("Couldn't save. Check your connection and try again."); }
 }
