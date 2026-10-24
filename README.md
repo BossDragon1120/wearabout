@@ -52,7 +52,7 @@ Command line instead: `supabase functions deploy wear-about`, then `supabase sec
 ### Closet (one-time update for projects set up before the Closet existed)
 Run [`supabase/migrations/002_closet.sql`](supabase/migrations/002_closet.sql) in the SQL Editor, and paste the latest `supabase/functions/wear-about/index.ts` into the `wear-about` function again. New projects get the closet table from `schema.sql` automatically.
 
-Later updates, each run once in the SQL Editor: [`003_buy_recs.sql`](supabase/migrations/003_buy_recs.sql) (buy recommendations switch) [`004_closet_crops.sql`](supabase/migrations/004_closet_crops.sql) (closet close-ups and color swatches) and [`005_chat.sql`](supabase/migrations/005_chat.sql) ("I'd love to chat about…" on posts, with phone numbers visible only to mutual friends). Re-paste the function after each.
+Later updates, each run once in the SQL Editor: [`003_buy_recs.sql`](supabase/migrations/003_buy_recs.sql) (buy recommendations switch) [`004_closet_crops.sql`](supabase/migrations/004_closet_crops.sql) (closet close-ups and color swatches) and [`005_chat.sql`](supabase/migrations/005_chat.sql) ("I'd love to chat about…" on posts, with phone numbers visible only to mutual friends), and [`006_invites.sql`](supabase/migrations/006_invites.sql) (accepting an invite link makes you mutual friends right away). Re-paste the function after each.
 
 ### 5. GitHub Pages
 In this repo: **Settings → Pages → Build and deployment → Deploy from a branch**, branch `main`, folder `/ (root)`. Your app appears at `https://bossdragon1120.github.io/wearabout/` within a minute or two.
@@ -61,7 +61,7 @@ In this repo: **Settings → Pages → Build and deployment → Deploy from a br
 Open the app's address in **Safari**, sign in with the emailed code, then **Share → Add to Home Screen**. Open it from the icon; you may need to sign in once more there.
 
 ## Inviting friends
-Send them the app link. They sign up with their email, then you each add the other's friend code on the **Friends** tab. Posts show only to mutual friends; scores always stay private.
+Tap **Invite friends** on the Friends tab and send the link. When they sign up from it, you're friends right away. (Adding by friend code also works: you each add the other's code.) Posts show only to mutual friends; scores always stay private.
 
 ## Where things live
 | Path | What it is |

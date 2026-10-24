@@ -47,13 +47,18 @@ const S = {
 /* ---------- invites ---------- */
 // A friend's invite link looks like .../wearabout/?invite=ABC123. Keep the code until they're signed in.
 const APP_URL = location.origin + location.pathname;
+// Links also carry a private token (&t=...) that makes the friendship mutual right away.
 (function captureInvite(){
-  const code=new URLSearchParams(location.search).get("invite");
-  if(code && /^[A-Za-z0-9]{4,8}$/.test(code)){ try{ localStorage.setItem("wa_invite", code.toUpperCase()); }catch{} }
-  if(code){ const u=new URL(location.href); u.searchParams.delete("invite"); history.replaceState(null,"",u.pathname+u.search+u.hash); }
+  const q=new URLSearchParams(location.search), code=q.get("invite"), tok=q.get("t");
+  try {
+    if(code && /^[A-Za-z0-9]{4,8}$/.test(code)){ localStorage.setItem("wa_invite", code.toUpperCase()); localStorage.removeItem("wa_invite_t"); }
+    if(tok && /^[A-Za-z0-9]{16,40}$/.test(tok)) localStorage.setItem("wa_invite_t", tok);
+  } catch {}
+  if(code||tok){ const u=new URL(location.href); u.searchParams.delete("invite"); u.searchParams.delete("t"); history.replaceState(null,"",u.pathname+u.search+u.hash); }
 })();
 const pendingInvite = () => { try{ return localStorage.getItem("wa_invite")||""; }catch{ return ""; } };
-const clearInvite = () => { try{ localStorage.removeItem("wa_invite"); }catch{} };
+const pendingToken = () => { try{ return localStorage.getItem("wa_invite_t")||""; }catch{ return ""; } };
+const clearInvite = () => { try{ localStorage.removeItem("wa_invite"); localStorage.removeItem("wa_invite_t"); }catch{} };
 
 /* ---------- helpers ---------- */
 const $ = s => document.querySelector(s);
@@ -619,7 +624,7 @@ async function postShare(){
 /* --- feed --- */
 function viewFeed(){
   const n=mutual().length;
-  let out=`<div class="stack"><div class="row"><h2>Feed</h2><span class="spacer"></span><span class="small muted">${n} friend${n===1?"":"s"}</span></div>`;
+  let out=`<div class="stack"><div class="row"><h2>Feed</h2><span class="spacer"></span><button class="link small" data-act="nav" data-view="friends">${n} friend${n===1?"":"s"}</button></div>`;
   if(!S.posts.length) out+=`<div class="empty"><b>Nothing here yet</b><p class="small muted">Share a fit from its page, or add friends with your friend code. Mutual friends' posts show up here.</p><button class="btn sm" data-act="nav" data-view="friends">Add friends</button></div>`;
   for(const p of S.posts){
     const h=S.hearts[p.id]||{count:0,mine:false}, name=displayName(p.user_id);
@@ -697,26 +702,23 @@ async function setBuyRecs(on){
 function viewFriends(){
   const m=mutual(), pending=[...S.out].filter(id=>!S.inc.has(id)), incoming=[...S.inc].filter(id=>!S.out.has(id)), p=S.profile;
   const person=(id,extra,action="")=>`<div class="person"><span class="avatar" style="background:${avatarColor(id)}">${esc(displayName(id).slice(0,1).toUpperCase())}</span><div style="flex:1;min-width:0"><b>${esc(displayName(id))}</b>${extra}</div>${action}</div>`;
-  return `<div class="stack"><h2>Friends</h2>
-    <div class="panel"><h3>Invite friends</h3>
-      <p class="small muted">Send the app link with your code built in. When they sign up, you'll see them under "Added you" — one tap to add back.</p>
-      <button class="btn primary" data-act="invite" ${p?"":"disabled"}>Invite friends</button></div>
-    <div class="panel"><h3>Your friend code</h3>
-      ${p?`<div class="row"><span class="code">${esc(p.friend_code)}</span><span class="spacer"></span><button class="btn sm" data-act="copyCode">Copy</button></div>`:`<p class="small muted">Loading…</p>`}
-      <div class="field"><label for="handleIn">Name friends see</label><div class="row" style="flex-wrap:nowrap"><input class="input" id="handleIn" maxlength="30" value="${esc(S.handleIn ?? (p&&p.handle) ?? "")}" placeholder="e.g. Dana"><button class="btn sm" data-act="saveHandle">Save</button></div></div>
-    </div>
-    ${S.chatReady?`<div class="panel"><h3>Your number</h3>
-      <p class="small muted">Used only when you invite friends to chat about a fit. Only mutual friends can see it.</p>
-      <div class="row" style="flex-wrap:nowrap"><input class="input" id="phoneIn" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(S.phoneIn ?? S.myPhone)}" placeholder="(555) 123-4567"><button class="btn sm" data-act="savePhone">Save</button></div>
-      ${S.myPhone?`<button class="link small" data-act="removePhone">Remove my number</button>`:""}</div>`:""}
-    <div class="panel"><h3>Add a friend</h3>
+  const lastPost=id=>{ const x=S.posts.find(q=>q.user_id===id); return x?`<div class="small muted">Last shared ${esc(ago(x.created_at))}</div>`:""; };
+  return `<div class="stack"><div class="row"><h2>Friends</h2><span class="spacer"></span><button class="btn sm primary" data-act="invite" ${p?"":"disabled"}>Invite friends</button></div>
+    ${incoming.length?`<div class="panel"><h3>Added you</h3>${incoming.map(id=>person(id,`<div class="small muted">Add them back to see each other's fits</div>`,`<button class="btn sm primary" data-act="addBack" data-uid="${esc(id)}">Add back</button>`)).join("")}</div>`:""}
+    <div class="panel"><h3>Your friends · ${m.length}</h3>${m.length?m.map(id=>person(id,lastPost(id))).join(""):`<p class="small muted">No friends yet. Tap <b>Invite friends</b>: when they sign up from your link, you're friends right away.</p>`}</div>
+    ${pending.length?`<div class="panel"><h3>Waiting on them</h3>${pending.map(id=>person(id,`<div class="small muted">They haven't added you back yet</div>`)).join("")}</div>`:""}
+    <div class="panel"><h3>Add a friend by code</h3>
       <div class="row" style="flex-wrap:nowrap"><input class="input" id="codeIn" maxlength="8" value="${esc(S.codeIn)}" placeholder="Their code" autocapitalize="characters" style="text-transform:uppercase"><button class="btn sm primary" data-act="addFriend">Add</button></div>
       ${S.friendMsg?`<p class="small">${esc(S.friendMsg)}</p>`:""}
-      <p class="small muted">Friendship is mutual: you each add the other's code. Send friends this app's link so they can sign up first.</p>
+      <p class="small muted">With a code, you each add the other's. An invite link does both at once.</p>
     </div>
-    ${incoming.length?`<div class="panel"><h3>Added you</h3>${incoming.map(id=>person(id,`<div class="small muted">Add them back to see each other's fits</div>`,`<button class="btn sm primary" data-act="addBack" data-uid="${esc(id)}">Add back</button>`)).join("")}</div>`:""}
-    <div class="panel"><h3>Friends · ${m.length}</h3>${m.length?m.map(id=>person(id,"")).join(""):`<p class="small muted">No mutual friends yet.</p>`}</div>
-    ${pending.length?`<div class="panel"><h3>Waiting on them</h3>${pending.map(id=>person(id,`<div class="small muted">They haven't added you back yet</div>`)).join("")}</div>`:""}
+    <div class="panel"><h3>Your profile</h3>
+      ${p?`<div class="row" style="flex-wrap:nowrap"><span class="small muted">Friend code</span><span class="code">${esc(p.friend_code)}</span><span class="spacer"></span><button class="btn sm" data-act="copyCode">Copy</button></div>`:`<p class="small muted">Loading…</p>`}
+      <div class="field"><label for="handleIn">Name friends see</label><div class="row" style="flex-wrap:nowrap"><input class="input" id="handleIn" maxlength="30" value="${esc(S.handleIn ?? (p&&p.handle) ?? "")}" placeholder="e.g. Dana"><button class="btn sm" data-act="saveHandle">Save</button></div></div>
+      ${S.chatReady?`<div class="field"><label for="phoneIn">Your number</label>
+        <div class="row" style="flex-wrap:nowrap"><input class="input" id="phoneIn" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(S.phoneIn ?? S.myPhone)}" placeholder="(555) 123-4567"><button class="btn sm" data-act="savePhone">Save</button></div>
+        <p class="small muted">Used only when you invite friends to chat about a fit. Only mutual friends can see it.${S.myPhone?` <button class="link small" data-act="removePhone">Remove my number</button>`:""}</p></div>`:""}
+    </div>
     <p class="small muted" style="text-align:center">Signed in as ${esc(S.email)}</p>
     <button class="btn ghost sm signout" data-act="signOut">Sign out</button>
   </div>`;
@@ -1178,7 +1180,10 @@ const ACT = {
     render(); },
   invite:async()=>{
     const code=S.profile&&S.profile.friend_code; if(!code) return;
-    const name=(S.profile.handle||"").trim(), link=`${APP_URL}?invite=${code}`;
+    // A fresh private token per invite; saved in the background so the share sheet opens right away.
+    const tok=[...crypto.getRandomValues(new Uint8Array(15))].map(b=>"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b%56]).join("")+"x";
+    sb.from("invites").insert({token:tok}).then(({error})=>{ if(error) console.warn("invite token not saved (006_invites.sql not run?)", error.message); });
+    const name=(S.profile.handle||"").trim(), link=`${APP_URL}?invite=${code}&t=${tok}`;
     const text=`👋 Hi! ${name?"It's "+name+". ":""}I've been logging my outfits on WearAbout and I'd love for you to join me 💛 Snap your fit, get a style score, and share your best looks with friends. Sign up here: ${link} (my friend code is ${code}) ✨`;
     try { if(navigator.share){ await navigator.share({title:"WearAbout", text}); return; } } catch(e){ if(e && e.name==="AbortError") return; }
     try { await navigator.clipboard.writeText(text); toast("Invite copied. Paste it into a message."); } catch { toast("Your link: "+link); }
@@ -1262,11 +1267,16 @@ async function onSession(session){
   loadSocial().then(()=>acceptInvite()).then(()=>softRender(["feed","friends"])).catch(console.error);
 }
 async function acceptInvite(){
-  const code=pendingInvite(); if(!code || !S.uid) return;
+  const code=pendingInvite(), tok=pendingToken(); if(!(code||tok) || !S.uid) return;
   try {
     const { data, error } = await sb.rpc("find_by_code",{code}); if(error) throw error;
     const hit=(data||[])[0];
     if(hit && hit.id===S.uid) return;   // your own invite link: keep it for whoever signs in next (e.g. a friend on this phone)
+    // A real invite link: both sides at once, so you're friends immediately.
+    if(tok){ const r=await sb.rpc("accept_invite",{t:tok});
+      const who=!r.error && (r.data||[])[0];
+      if(who){ clearInvite(); S.people[who.id]={id:who.id,handle:who.handle}; await loadSocial();
+        toast(`You and ${who.handle||"your friend"} are now friends 💛`); return; } }
     clearInvite();
     if(!hit || S.out.has(hit.id)) return;
     S.people[hit.id]={id:hit.id,handle:hit.handle}; await addFriend(hit.id);
