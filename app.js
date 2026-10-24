@@ -258,7 +258,7 @@ function viewFlow(){
       <div class="field"><label for="detail">Details (optional)</label>
         <input class="input" id="detail" maxlength="60" placeholder="e.g. Fleet Week, dinner date, coffee with Sam" value="${esc(f.detail)}"></div>
       <label class="keepbg"><input type="checkbox" id="keepBg" ${f.keepBg?"checked":""}> Keep my own background</label>
-      <button class="btn primary block" data-act="runStyle" ${f.cat?"":"disabled"}>Style this fit</button></div>`;
+      <button class="btn primary block" data-act="runStyle" ${f.cat?"":"disabled"}>${f.keepBg?"Reveal my score":"Choose a backdrop"}</button></div>`;
   } else {
     const a=f.analysis;
     const tiles=f.keepBg?[["original","Original"]]:[["original","Original"],["studio","Studio"],["themed","Themed"]];
@@ -279,7 +279,7 @@ function viewFlow(){
 }
 function viewResult(){
   const f=S.flow, a=f.analysis, ok=f.bg&&f.comps[f.bg]&&a!=="loading"&&!f.saving;
-  let out=`<button class="back" data-act="backToBackdrop">${ICON.back} ${f.keepBg?"Back":"Change backdrop"}</button><div class="stack" style="gap:18px">
+  let out=`<button class="back" data-act="backToBackdrop">${ICON.back} ${f.keepBg?"Change occasion":"Change backdrop"}</button><div class="stack" style="gap:18px">
     <img class="fitimg" src="${f.comps[f.bg].url}" alt="Your fit">
     <span class="cpill" style="align-self:flex-start">${CAT_EMOJI[f.cat]||""} ${esc(f.cat)}${f.detail?" · "+esc(f.detail):""}</span>`;
   if(a==="loading") out+=`<div class="status"><span class="dot live"></span><span>Scoring your fit and picking recs…</span></div>`;
@@ -328,7 +328,7 @@ async function startFlow(file){
   f.guessing=false; if(S.flow===f && f.step==="occasion") render();
 }
 function runStyle(){
-  const f=S.flow; f.step="style";
+  const f=S.flow; f.step=f.keepBg?"result":"style";
   f.comps.original={blob:f.origBlob,url:f.origUrl}; f.compState.original="ok";
   if(f.keepBg) f.bg="original";
   render(); scrollTo(0,0);
@@ -805,7 +805,7 @@ const ACT = {
   recFb:t=>recFeedback(t.dataset.kind,t.dataset.val),
   flowRecFb:t=>{ const f=S.flow; if(!f) return; const k=t.dataset.kind, v=t.dataset.val; f.recFb={...(f.recFb||{}),[k]:(f.recFb||{})[k]===v?null:v}; render(); },
   reveal:()=>{ const f=S.flow; if(!f) return; f.step="result"; render(); scrollTo(0,0); },
-  backToBackdrop:()=>{ const f=S.flow; if(!f) return; f.step="style"; render(); scrollTo(0,0); },
+  backToBackdrop:()=>{ const f=S.flow; if(!f) return; f.step=f.keepBg?"occasion":"style"; render(); scrollTo(0,0); },
   addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null,clear:true}]; render(); $("#saveItemsBtn").hidden=false; const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
   removeItem:t=>{ const x=curFit(); x.items=x.items.filter((_,i)=>i!=t.dataset.i); render(); $("#saveItemsBtn").hidden=false; },
   saveItems:async()=>{ const x=curFit(); x.items=(x.items||[]).filter(i=>i.label.trim()).map(i=>({...i,label:i.label.trim()}));
@@ -887,7 +887,7 @@ document.addEventListener("change", e=>{
   const t=e.target;
   if(t.id==="photoIn") startFlow(t.files&&t.files[0]);
   else if(t.dataset.itemType!=null){ curFit().items[t.dataset.itemType].type=t.value; $("#saveItemsBtn").hidden=false; }
-  else if(t.id==="keepBg"&&S.flow) S.flow.keepBg=t.checked;
+  else if(t.id==="keepBg"&&S.flow){ S.flow.keepBg=t.checked; render(); }
   else if(t.id==="buyRecs") setBuyRecs(t.checked);
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
   else if(t.id==="mergeTo") { S.mergeTo=t.value; render(); }
