@@ -572,7 +572,7 @@ function viewShare(){
     <h2>Share your fit</h2>
     <canvas class="shareCanvas" id="shareCanvas" width="720" height="960" aria-label="Post preview"></canvas>
     <div class="field"><label for="caption">Caption (optional)</label><input class="input" id="caption" maxlength="140" value="${esc(sh.caption)}" placeholder="Where you're headed: Fleet Week, dinner date…">${x.detail?`<p class="small muted">Your caption from logging this fit. Edit it for friends if you like; your saved fit keeps the original.</p>`:""}</div>
-    <div class="stack" style="gap:8px"><h3>Plug something you love</h3>
+    <div class="stack" style="gap:8px"><h3>Plug one piece you love</h3>
       ${(x.items||[]).length?x.items.map((it,i)=>{ const p=sh.plugs[i]; return `<div class="plug">
         <label class="ck"><input type="checkbox" data-plug-on="${i}" ${p?"checked":""}>${plugCrop(it)?`<img class="plugthumb" src="${esc(url("fits",plugCrop(it)))}" alt="">`:""} ${esc(it.label)}</label>
         ${p?`<input class="input" data-plug-i="${i}" data-field="brand" maxlength="40" placeholder="Brand (optional)" value="${esc(p.brand)}" autocapitalize="words">
@@ -648,12 +648,11 @@ function viewFeed(){
     out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head">${avatar(p.user_id)}
       <div class="headtext"><b>${esc(name)}</b><span class="small muted">${esc(ago(p.created_at))}</span></div><span class="spacer"></span><span class="cpill">${CAT_EMOJI[p.category]||""} ${esc(p.category)}</span></div>
       ${p.caption||p.detail?`<p class="hook ${S.hookOpen&&S.hookOpen.has(p.id)?"open":""}" data-act="hookMore" data-id="${esc(p.id)}">${esc(p.caption||p.detail)}</p>`:""}
-      <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
+      <div class="photo-wrap"><img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">${chatOverlay(p)}</div>
       <div class="body">
       <div class="actrow"><button class="heart ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}" aria-label="${h.mine?"Unheart":"Heart"} this fit">${h.mine?ICON.heartFill:ICON.heart}${h.count||""}</button>
-        ${(p.badges||[]).length?`<span class="minibadges" title="${esc(p.badges.join(", "))}">${p.badges.map(n=>`<span class="mbdg">${badgeIcon(n)} ${esc(n)}</span>`).join("")}</span>`:""}
-        <span class="spacer"></span>${p.user_id===S.uid?`<button class="link small" data-act="removePost" data-id="${esc(p.id)}">Remove</button>`:""}</div>
-      ${chatCard(p)}
+        ${(p.badges||[]).length?`<span class="badgeicons" title="${esc(p.badges.join(", "))}" aria-label="Badges: ${esc(p.badges.join(", "))}">${p.badges.map(badgeIcon).join("")}</span>`:""}
+        <span class="spacer"></span>${p.user_id===S.uid?`<button class="link small muted" data-act="removePost" data-id="${esc(p.id)}">Remove</button>`:""}</div>
       ${lovesRow(p)}
       </div></article>`;
   }
@@ -661,19 +660,18 @@ function viewFeed(){
 }
 // Plugs, framed as a friend's genuine pick: their words first, then the piece, then a light Shop link.
 function lovesRow(p){
-  const plugs=p.plugs||[]; if(!plugs.length) return "";
-  return `<div class="loves"><span class="loveshead">💛 ${plugs.length>1?"Favorites":"Favorite"}</span><div class="lovesrow ${plugs.length>1?"multi":""}">${plugs.map(g=>{
-    const shop=safeUrl(g.link)||google([g.brand,g.label].filter(Boolean).join(" ")), pimg=g.img&&url("posts",g.img);
-    return `<a class="love" href="${esc(shop)}" target="_blank" rel="noopener noreferrer">${pimg?`<img src="${esc(pimg)}" alt="" loading="lazy">`:`<span class="lovenoimg">💛</span>`}
-      <span class="lovetext">${g.review?`<span class="lovequote">“${esc(g.review)}”</span>`:""}<span class="lovepiece">${g.brand?`<b>${esc(g.brand)}</b> · `:""}${esc(g.label)}</span><span class="loveshop">Shop it ↗</span></span></a>`; }).join("")}</div></div>`;
+  const g=(p.plugs||[])[0]; if(!g) return "";   // one favorite per post
+  const shop=safeUrl(g.link)||google([g.brand,g.label].filter(Boolean).join(" ")), pimg=g.img&&url("posts",g.img);
+  return `<a class="love" href="${esc(shop)}" target="_blank" rel="noopener noreferrer">${pimg?`<img src="${esc(pimg)}" alt="" loading="lazy">`:`<span class="lovenoimg">💛</span>`}
+    <span class="lovetext">${g.review?`<span class="lovequote">“${esc(g.review)}”</span>`:""}<span class="lovepiece">${g.brand?`<b>${esc(g.brand)}</b> · `:""}${esc(g.label)}</span><span class="loveshop">💛 Favorite · Shop it ↗</span></span></a>`;
 }
-function chatCard(p){
+// The chat invitation sits on the bottom of the photo, so the post has only one box under it.
+function chatOverlay(p){
   if(!chatOpen(p)) return "";
-  if(p.user_id===S.uid) return `<div class="chatcard mine"><div class="chatline"><span class="chatic">💬</span><span>${esc(p.chat_topic)}</span></div>
-    <div class="row"><span class="small muted">Until ${esc(untilTime(p.chat_until))}</span><span class="spacer"></span><button class="link small" data-act="endChat" data-id="${esc(p.id)}">End now</button></div></div>`;
+  const until=`<span class="ovuntil">until ${esc(untilTime(p.chat_until))}</span>`;
+  if(p.user_id===S.uid) return `<div class="chatov"><span class="ovline">💬 ${esc(p.chat_topic)}</span><span class="ovacts">${until}<button class="ovbtn ghost" data-act="endChat" data-id="${esc(p.id)}">End</button></span></div>`;
   const l=chatLinks(p); if(!l) return "";
-  return `<div class="chatcard"><div class="chatline"><span class="chatic">💬</span><span>${esc(p.chat_topic)}</span></div>
-    <div class="row"><a class="btn sm primary" href="${esc(l.text)}">Text</a><a class="btn sm" href="${esc(l.call)}">Call</a><span class="spacer"></span><span class="small muted">until ${esc(untilTime(p.chat_until))}</span></div></div>`;
+  return `<div class="chatov"><span class="ovline">💬 ${esc(p.chat_topic)}</span><span class="ovacts">${until}<a class="ovbtn" href="${esc(l.text)}">Text</a><a class="ovbtn ghost" href="${esc(l.call)}">Call</a></span></div>`;
 }
 async function endChat(id){
   const p=S.posts.find(x=>x.id===id); if(!p) return; const prev=p.chat_until;
@@ -1361,7 +1359,8 @@ document.addEventListener("change", e=>{
   else if(t.id==="buyRecs") setBuyRecs(t.checked);
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
   else if(t.id==="chatOn"&&S.share){ S.share.chat=t.checked; render(); }
-  else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn; if(t.checked) S.share.plugs[i]={brand:(curFit()?.items?.[i]?.brand)||"",review:""}; else delete S.share.plugs[i]; render(); }
+  else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn;   // one piece per post: picking another switches to it
+    S.share.plugs = t.checked ? {[i]:{brand:(curFit()?.items?.[i]?.brand)||"",review:""}} : {}; render(); }
 });
 
 /* ---------- boot ---------- */
