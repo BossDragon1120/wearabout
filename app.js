@@ -838,20 +838,52 @@ async function makeCrops(fit, photoBlob){
     softRender(["closet","item","share"]);
   }));
 }
+// Pieces that never got a close-up or a color dot (their first fit was unclear, saved before close-ups existed,
+// or an upload failed): quietly fill them in from the newest fit where the piece was clearly visible.
+async function fillCloseups(){
+  if(!S.closetReady || S.filling) return; S.filling=true;
+  try {
+    const byFit=new Map();
+    for(const piece of S.closet.filter(c=>!c.crop_path)){
+      const fit=S.fits.find(f=>(f.items||[]).some(it=>it.item_id===piece.id && Array.isArray(it.box) && it.clear===true) && (f.orig_path||f.image_path));
+      if(fit) byFit.set(fit.id, fit);
+    }
+    for(const fit of [...byFit.values()].slice(0,6)){   // a few photos per visit keeps data use small
+      const d=await sb.storage.from("fits").download(fit.orig_path||fit.image_path); if(d.error){ console.warn("fill",d.error); continue; }
+      await makeCrops(fit, d.data);
+    }
+    // Close-ups with no dot: measure it from the close-up itself.
+    for(const piece of S.closet.filter(c=>c.crop_path && !isSwatch(c.swatch)).slice(0,12)){
+      const d=await sb.storage.from("fits").download(piece.crop_path); if(d.error) continue;
+      const img=await blobImage(d.data), W=img.naturalWidth, H=img.naturalHeight;
+      const swatch=isPatterned(piece.label)?multiColor(img,0,0,W,H):dominantColor(img,0,0,W,H,pieceHex({label:piece.label}));
+      if(!swatch) continue;
+      const { error } = await sb.from("closet_items").update({swatch}).eq("id",piece.id); if(!error){ piece.swatch=swatch; softRender(["closet","item"]); }
+    }
+  } catch(e){ console.warn("fill",e); }
+  S.filling=false;
+}
 // Most common color in the middle of the piece, ignoring the edges where background creeps in.
 // The main colors in part of an image: color groups covering at least 4% of it, biggest first.
 function colorsIn(img,x,y,w,h,minShare=.04){
-  const c=document.createElement("canvas"); c.width=c.height=32; const ctx=c.getContext("2d",{willReadFrequently:true});
-  ctx.drawImage(img,x,y,w,h,0,0,32,32);
-  const d=ctx.getImageData(0,0,32,32).data, bins=new Map();
-  for(let i=0;i<d.length;i+=4){ const k=(d[i]>>4)<<8|(d[i+1]>>4)<<4|(d[i+2]>>4); const e=bins.get(k)||{n:0,r:0,g:0,b:0}; e.n++; e.r+=d[i]; e.g+=d[i+1]; e.b+=d[i+2]; bins.set(k,e); }
+  // 64×64 real pixels (no smoothing), so stripes and prints keep their own colors instead of blurring together.
+  const N=64, c=document.createElement("canvas"); c.width=c.height=N; const ctx=c.getContext("2d",{willReadFrequently:true});
+  ctx.imageSmoothingEnabled=false; ctx.drawImage(img,x,y,Math.max(1,w),Math.max(1,h),0,0,N,N);
+  const d=ctx.getImageData(0,0,N,N).data, bins=new Map(), total=N*N;
+  for(let i=0;i<d.length;i+=4){ const k=(d[i]>>5)<<6|(d[i+1]>>5)<<3|(d[i+2]>>5); const e=bins.get(k)||{n:0,r:0,g:0,b:0}; e.n++; e.r+=d[i]; e.g+=d[i+1]; e.b+=d[i+2]; bins.set(k,e); }
   const hx=v=>Math.round(v).toString(16).padStart(2,"0");
-  const out=[];
+  // Group similar shades together (fabric texture and light falloff spread one color over many shades), then rank the groups.
+  const groups=[];
   for(const e of [...bins.values()].sort((a,b)=>b.n-a.n)){
-    if(e.n<minShare*1024) break;
     const rgb=[e.r/e.n,e.g/e.n,e.b/e.n];
-    if(out.some(o=>Math.hypot(o.rgb[0]-rgb[0],o.rgb[1]-rgb[1],o.rgb[2]-rgb[2])<40)) continue;   // skip near-duplicates
-    out.push({rgb, hex:"#"+rgb.map(hx).join(""), share:e.n/1024});
+    const g=groups.find(g=>Math.hypot(g.r/g.n-rgb[0],g.g/g.n-rgb[1],g.b/g.n-rgb[2])<56);
+    if(g){ g.n+=e.n; g.r+=e.r; g.g+=e.g; g.b+=e.b; } else groups.push({n:e.n,r:e.r,g:e.g,b:e.b});
+  }
+  const out=[];
+  for(const g of groups.sort((a,b)=>b.n-a.n)){
+    if(g.n<minShare*total && out.length) break;   // always keep at least the most common color
+    const rgb=[g.r/g.n,g.g/g.n,g.b/g.n];
+    out.push({rgb, hex:"#"+rgb.map(hx).join(""), share:g.n/total});
   }
   return out;
 }
@@ -1264,7 +1296,7 @@ async function onSession(session){
   render();
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
   S.loaded=true; render();
-  backfillCloset().then(()=>softRender(["closet","item","fit"])).catch(console.error);
+  backfillCloset().then(()=>softRender(["closet","item","fit"])).then(()=>fillCloseups()).catch(console.error);
   loadSocial().then(()=>acceptInvite()).then(()=>softRender(["feed","friends"])).catch(console.error);
 }
 async function acceptInvite(){
