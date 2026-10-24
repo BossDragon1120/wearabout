@@ -178,6 +178,9 @@ async function backdrop(key: string, image: string, mode: string, category: stri
   form.append("imageFile", new Blob([bytes], { type: "image/jpeg" }), "fit.jpg");
   form.append("outputSize", "1080x1440");
   form.append("padding", "0.07");
+  // JPEG instead of the default PNG: the backdrop fills the frame, so no transparency is needed,
+  // and the file is several times smaller, so it reaches the phone much faster.
+  form.append("export.format", "jpeg");
   // Keep clothing colors true to life while evening out the light.
   form.append("lighting.mode", "ai.preserve-hue-and-saturation");
 
@@ -201,7 +204,7 @@ async function backdrop(key: string, image: string, mode: string, category: stri
     return json(502, { error: msg });
   }
   return new Response(res.body, {
-    headers: { ...CORS, "Content-Type": res.headers.get("Content-Type") ?? "image/png", "Cache-Control": "no-store" },
+    headers: { ...CORS, "Content-Type": res.headers.get("Content-Type") ?? "image/jpeg", "Cache-Control": "no-store" },
   });
 }
 
@@ -214,11 +217,15 @@ Deno.serve(async (req) => {
   // Only signed-in WearAbout users can spend the AI credit.
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const { data: { user } } = token ? await admin.auth.getUser(token) : { data: { user: null } };
+  type Body = { action?: string; image?: string; mode?: string; category?: string; detail?: string; goal?: string; buy?: boolean; closet?: { id?: string; label?: string; type?: string }[] };
+  // Check the sign-in and read the photo at the same time.
+  const [auth, body] = await Promise.all([
+    token ? admin.auth.getUser(token) : Promise.resolve({ data: { user: null } }),
+    req.json().catch(() => null) as Promise<Body | null>,
+  ]);
+  const user = auth.data.user;
   if (!user) return json(401, { error: "Sign in again." });
-
-  let body: { action?: string; image?: string; mode?: string; category?: string; detail?: string; goal?: string; buy?: boolean; closet?: { id?: string; label?: string; type?: string }[] };
-  try { body = await req.json(); } catch { return json(400, { error: "Bad request." }); }
+  if (!body) return json(400, { error: "Bad request." });
   if (!body.image || body.image.length > 8_000_000) return json(400, { error: "Missing or oversized photo." });
 
   const isBackdrop = body.action === "backdrop";
@@ -233,6 +240,11 @@ Deno.serve(async (req) => {
     .eq("user_id", user.id).eq("kind", kind).gte("created_at", since);
   if ((count ?? 0) >= limit) return json(429, { error: `You've hit today's ${isBackdrop ? "backdrop" : "styling"} limit. Try again tomorrow.` });
   await admin.from("ai_usage").insert({ user_id: user.id, kind });
+  // Now and then, clear this person's usage rows older than two days so the table stays small. Not awaited.
+  if (Math.random() < 0.05) {
+    admin.from("ai_usage").delete().eq("user_id", user.id).lt("created_at", new Date(Date.now() - 2 * 864e5).toISOString())
+      .then(({ error }) => { if (error) console.error("usage cleanup", error.message); });
+  }
 
   const category = CATS.includes(String(body.category)) ? String(body.category) : "Casual/Hangout";
   const detail = String(body.detail ?? "").slice(0, 60);

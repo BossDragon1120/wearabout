@@ -1,6 +1,6 @@
 // WearAbout service worker: keeps the app shell available offline and fast to open.
 // Network first, so a new deploy shows up on the next open; the cache is only a fallback.
-const CACHE = "wearabout-v2";
+const CACHE = "wearabout-v3";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "config.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/apple-touch-icon.png"];
 
@@ -14,10 +14,14 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return; // never touch Supabase or AI calls
+  const fromNet = fetch(e.request).then((res) => {
+    if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
+    return res;
+  });
+  const fallback = () => caches.match(e.request).then((r) => r || caches.match("index.html"));
+  // On a weak signal, don't leave the app blank: after 3 seconds use the saved copy (the network copy still updates the cache).
+  const slow = new Promise((resolve) => setTimeout(resolve, 3000)).then(() => caches.match(e.request));
   e.respondWith(
-    fetch(e.request).then((res) => {
-      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
-      return res;
-    }).catch(() => caches.match(e.request).then((r) => r || caches.match("index.html")))
+    Promise.race([fromNet.catch(() => null), slow]).then((r) => r || fromNet.catch(fallback)).catch(fallback)
   );
 });

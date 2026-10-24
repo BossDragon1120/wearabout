@@ -39,7 +39,7 @@ const S = {
   profile:null, fits:[], recs:[], out:new Set(), inc:new Set(), people:{}, posts:[], hearts:{},
   urls:{},
   view:"home", filter:{cat:null,best:false},
-  flow:null, fitId:null, share:null, confirmDel:false, friendMsg:"", codeIn:"", handleIn:null, goal:"", goalEdit:false, goalIn:null, buyRecs:true, buyRecsReady:true, ideasFilter:"all",
+  flow:null, fitId:null, share:null, confirmDel:false, friendMsg:"", codeIn:"", handleIn:null, goal:"", goalEdit:false, goalIn:null, buyRecs:true, ideasFilter:"all",
   closet:[], closetReady:false, closetSort:"most", itemId:null, itemEdit:null, mergeTo:"", confirmRemove:false, fitBack:"home",
   auth:{step:"email", email:"", code:"", busy:false, msg:""},
 };
@@ -86,8 +86,10 @@ function scaled(img,maxEdge){
   const c=document.createElement("canvas"); c.width=Math.round(w*s); c.height=Math.round(h*s);
   c.getContext("2d").drawImage(img,0,0,c.width,c.height); return c;
 }
+// Decode a blob into an image, then release the temporary link so memory doesn't pile up.
+async function blobImage(blob){ const u=URL.createObjectURL(blob); try { return await loadImage(u); } finally { URL.revokeObjectURL(u); } }
 async function jpeg(blobOrImg, maxEdge, q=.88){
-  const img = blobOrImg instanceof Blob ? await loadImage(URL.createObjectURL(blobOrImg)) : blobOrImg;
+  const img = blobOrImg instanceof Blob ? await blobImage(blobOrImg) : blobOrImg;
   return toBlob(scaled(img,maxEdge),"image/jpeg",q);
 }
 function base64(blob){ return new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(String(fr.result).split(",")[1]); fr.readAsDataURL(blob); }); }
@@ -124,24 +126,30 @@ async function loadMine(){
     sb.from("closet_items").select("*").order("created_at",{ascending:true}),
   ]);
   S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null; S.goal=(g.data&&g.data.style_goal)||"";
-  S.buyRecs=!(g.data && g.data.buy_recs===false); S.buyRecsReady=!g.data || ("buy_recs" in g.data);
+  S.buyRecs=!(g.data && g.data.buy_recs===false);
   S.closetReady=!c.error; S.closet=c.data||[];
   await signUrls("fits", [...S.fits.map(x=>x.thumb_path), ...S.closet.map(c=>c.crop_path).filter(Boolean)]);
+  S.mineAt=Date.now();
 }
 async function loadSocial(){
-  const { data:fr } = await sb.from("friendships").select("user_id,friend_id");
+  // Friendships and posts don't depend on each other, so fetch them together, then names, hearts and photos together.
+  const [{ data:fr }, { data:posts }] = await Promise.all([
+    sb.from("friendships").select("user_id,friend_id"),
+    sb.from("posts").select("*").order("created_at",{ascending:false}).limit(60),
+  ]);
   S.out=new Set((fr||[]).filter(x=>x.user_id===S.uid).map(x=>x.friend_id));
   S.inc=new Set((fr||[]).filter(x=>x.friend_id===S.uid).map(x=>x.user_id));
-  const ids=[...new Set([...S.out,...S.inc])];
-  if(ids.length){ const { data } = await sb.from("profiles").select("id,handle").in("id",ids); (data||[]).forEach(p=>S.people[p.id]=p); }
-  const { data:posts } = await sb.from("posts").select("*").order("created_at",{ascending:false}).limit(60);
-  S.posts=posts||[];
-  S.hearts={};
-  if(S.posts.length){
-    const { data:h } = await sb.from("hearts").select("post_id,user_id").in("post_id",S.posts.map(p=>p.id));
-    (h||[]).forEach(x=>{ const e=S.hearts[x.post_id]||(S.hearts[x.post_id]={count:0,mine:false}); e.count++; if(x.user_id===S.uid) e.mine=true; });
-  }
-  await signUrls("posts", S.posts.map(p=>p.image_path));
+  const ids=[...new Set([...S.out,...S.inc])].filter(id=>!S.people[id]);
+  const list=posts||[];
+  const [pr, h] = await Promise.all([
+    ids.length ? sb.from("profiles").select("id,handle").in("id",ids) : {data:[]},
+    list.length ? sb.from("hearts").select("post_id,user_id").in("post_id",list.map(p=>p.id)) : {data:[]},
+    signUrls("posts", list.map(p=>p.image_path)),
+  ]);
+  (pr.data||[]).forEach(p=>S.people[p.id]=p);
+  const hearts={};
+  (h.data||[]).forEach(x=>{ const e=hearts[x.post_id]||(hearts[x.post_id]={count:0,mine:false}); e.count++; if(x.user_id===S.uid) e.mine=true; });
+  S.posts=list; S.hearts=hearts; S.socialAt=Date.now();
 }
 
 /* ---------- streak ---------- */
@@ -295,7 +303,6 @@ function scoreBlock(an, score, cat, fb, recAct){
   const best=dims.reduce((m,d)=>!m||an.dims[d[0]].score>an.dims[m].score?d[0]:m,null);
   const low=an.low&&an.dims[an.low]?an.low:null;
   const short=l=>({"Proportion & fit":"Proportion","Finishing details":"Details","Occasion fit":"Occasion"})[l]||l;
-  const line=[best?`Strongest: <b>${esc(name(best))} ${Number(an.dims[best].score).toFixed(1)}</b>`:"", low&&low!==best?`Room to grow: <b>${esc(name(low))} ${Number(an.dims[low].score).toFixed(1)}</b>`:""].filter(Boolean).join(" · ");
   return `<div class="scoreRow"><div class="score">${fmtScore(score)}<small>/10</small></div><div class="small muted" style="padding-bottom:6px">${score>=BEST?"⭐ In your Best fits":"Style score for "+esc(cat)}<br>Only you see this.</div></div>
     ${badgeChips(an.badges)}
     ${an.review?`<p class="review">${esc(an.review)}</p>`:""}
@@ -316,9 +323,12 @@ function bgTile(key,label){
 }
 async function startFlow(file){
   if(!file) return;
-  let img; try { img=await loadImage(URL.createObjectURL(file)); } catch { toast("That file isn't a photo WearAbout can read."); return; }
+  let img; try { img=await blobImage(file); } catch { toast("That file isn't a photo WearAbout can read."); return; }
   const origBlob=await toBlob(scaled(img,1600),"image/jpeg",.88), origUrl=URL.createObjectURL(origBlob), b64=await base64(origBlob);
-  const f={step:"occasion", origBlob, origUrl, b64, guess:null, guessConf:null, guessing:true, guessErr:null, cat:null, detail:"",
+  // Claude shrinks anything bigger than about 1.2 megapixels anyway, so send it a lighter copy.
+  const aiB64=await base64(await toBlob(scaled(img,1280),"image/jpeg",.85));
+  if(S.flow && S.flow.origUrl) URL.revokeObjectURL(S.flow.origUrl);
+  const f={step:"occasion", origBlob, origUrl, b64, aiB64, guess:null, guessConf:null, guessing:true, guessErr:null, cat:null, detail:"",
     analysis:null, analysisErr:"", comps:{}, compState:{}, bg:null, bgErr:"", saving:false};
   S.flow=f; S.view="flow"; render(); scrollTo(0,0);
   try {
@@ -333,19 +343,31 @@ function runStyle(){
   if(f.keepBg) f.bg="original";
   render(); scrollTo(0,0);
   if(!f.keepBg) for(const mode of ["studio","themed"]){
-    f.compState[mode]="loading";
+    // Studio doesn't depend on the occasion; themed does. Only rebuild what actually changed (each one costs a Photoroom credit).
+    const key=mode==="studio"?"studio":`${f.cat}|${f.detail}`;
+    if((f.compKey||{})[mode]===key && f.compState[mode]!=="failed") continue;
+    (f.compKey||(f.compKey={}))[mode]=key;
+    if(f.comps[mode]){ URL.revokeObjectURL(f.comps[mode].url); delete f.comps[mode]; if(f.bg===mode) f.bg="original"; }
+    f.compState[mode]="loading"; if(f.errs) delete f.errs[mode];
     callFn("wear-about",{action:"backdrop", mode, image:f.b64, category:f.cat, detail:f.detail},true)
       .then(blob=>jpeg(blob,1440,.9))
-      .then(blob=>{ f.comps[mode]={blob,url:URL.createObjectURL(blob)}; f.compState[mode]="ok"; if(!f.bg||(f.bg==="original"&&!f.pickedBg)) f.bg=mode; })
-      .catch(e=>{ f.compState[mode]="failed"; f.bgErr=e.message; (f.errs||(f.errs={}))[mode]=e.message; console.error("backdrop",mode,e.message); if(!f.bg && f.compState.studio==="failed" && f.compState.themed==="failed") f.bg="original"; })
+      .then(blob=>{ if(f.compKey[mode]!==key) return; f.comps[mode]={blob,url:URL.createObjectURL(blob)}; f.compState[mode]="ok"; if(!f.bg||(f.bg==="original"&&!f.pickedBg)) f.bg=mode; })
+      .catch(e=>{ if(f.compKey[mode]!==key) return; f.compState[mode]="failed"; f.bgErr=e.message; (f.errs||(f.errs={}))[mode]=e.message; console.error("backdrop",mode,e.message); if(!f.bg && f.compState.studio==="failed" && f.compState.themed==="failed") f.bg="original"; })
       .finally(()=>{ if(S.flow===f && S.view==="flow") render(); });
   }
+  // Same occasion, details, goal and buy setting as last time: keep the score instead of paying for a new one.
+  const key=[f.cat,f.detail,S.goal||"",S.buyRecs].join("|");
+  if(f.analysisKey===key && f.analysis && (f.analysis==="loading" || f.analysis.score!=null)) return;
   runAnalysis(f);
 }
 async function runAnalysis(f){
-  f.analysis="loading"; if(S.flow===f) render();
-  try { f.analysis=await callFn("wear-about",{action:"analyze", image:f.b64, category:f.cat, detail:f.detail, goal:S.goal||"", closet:closetForAI(), buy:S.buyRecs}); }
-  catch(e){ f.analysis={score:null}; f.analysisErr=e.message; }
+  const key=[f.cat,f.detail,S.goal||"",S.buyRecs].join("|"); f.analysisKey=key;
+  f.analysis="loading"; f.recFb={}; if(S.flow===f) render();
+  let out, err="";
+  try { out=await callFn("wear-about",{action:"analyze", image:f.aiB64||f.b64, category:f.cat, detail:f.detail, goal:S.goal||"", closet:closetForAI(), buy:S.buyRecs}); }
+  catch(e){ out={score:null}; err=e.message; }
+  if(f.analysisKey!==key) return;   // a newer request replaced this one
+  f.analysis=out; f.analysisErr=err;
   if(S.flow===f && S.view==="flow") render();
 }
 async function saveFit(share=false){
@@ -365,7 +387,8 @@ async function saveFit(share=false){
     if(error) throw error;
     makeCrops(data, f.origBlob).catch(e=>console.error("crops",e));
     S.urls["fits:"+row.image_path]=f.comps[f.bg].url; S.urls["fits:"+row.thumb_path]=URL.createObjectURL(thumb);
-    for(const kind of ["tweak","buy"]) if(a && (f.recFb||{})[kind]==="up") await saveIdea(data, kind).catch(console.error);
+    Promise.all(["tweak","buy"].filter(kind=>a && (f.recFb||{})[kind]==="up").map(kind=>saveIdea(data, kind).catch(console.error)))
+      .then(()=>softRender(["saved"]));
     S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
     const n=streakInfo().n; toast(n>1?`Saved to your Fits · ${n}-day streak`:"Saved to your Fits · streak started");
     if(share) await openShare();
@@ -638,7 +661,7 @@ async function makeCrops(fit, photoBlob){
   const todo=(fit.items||[]).filter(it=>it.item_id && Array.isArray(it.box) && it.clear===true)
     .map(it=>({it, piece:S.closet.find(c=>c.id===it.item_id)})).filter(x=>x.piece && !x.piece.crop_path);
   if(!todo.length) return;
-  const img=await loadImage(URL.createObjectURL(photoBlob)), W=img.naturalWidth, H=img.naturalHeight;
+  const img=await blobImage(photoBlob), W=img.naturalWidth, H=img.naturalHeight;
   for(const {it,piece} of todo){
     const [l,t,r,b]=it.box, pad=.06;
     const x0=Math.max(0,(l-pad*(r-l))*W), y0=Math.max(0,(t-pad*(b-t))*H), x1=Math.min(W,(r+pad*(r-l))*W), y1=Math.min(H,(b+pad*(b-t))*H);
@@ -746,7 +769,7 @@ async function removeClosetItem(id=S.itemId){
     const { error } = await sb.from("closet_items").delete().eq("id",c.id); if(error) throw error;
     S.closet=S.closet.filter(x=>x.id!==c.id); S.view="closet"; S.confirmRemove=false; render();
     toast("Removed from closet", async()=>{
-      const r=await sb.from("closet_items").insert({id:c.id,label:c.label,type:c.type,brand:c.brand||null}); if(r.error) throw r.error;
+      const r=await sb.from("closet_items").insert({id:c.id,label:c.label,type:c.type,brand:c.brand||null,crop_path:c.crop_path||null,swatch:c.swatch||null}); if(r.error) throw r.error;
       for(const b of before){ b.f.items=b.items; await sb.from("fits").update({items:b.items}).eq("id",b.f.id); }
       S.closet=[...S.closet,c]; render(); toast("Restored");
     });
@@ -778,7 +801,7 @@ document.addEventListener("touchend",()=>{
 /* ---------- actions ---------- */
 const ACT = {
   nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.confirmDel=false; render(); scrollTo(0,0);
-    if(S.view==="feed"||S.view==="friends") loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
+    if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
   log:()=>{ const i=$("#photoIn"); i.value=""; i.click(); },
   filterBest:()=>{ S.filter.best=!S.filter.best; render(); },
   filterCat:t=>{ const c=t.dataset.cat||null; S.filter.cat=S.filter.cat===c?null:c; render(); },
@@ -795,7 +818,7 @@ const ACT = {
   removeItemCancel:()=>{ S.confirmRemove=false; render(); },
   removeItemConfirm:()=>removeClosetItem(S.itemId),
   swipeRemove:t=>removeClosetItem(t.dataset.id),
-  cancelFlow:()=>{ S.flow=null; S.view="home"; render(); },
+  cancelFlow:()=>{ const f=S.flow; if(f){ URL.revokeObjectURL(f.origUrl); Object.values(f.comps||{}).forEach(c=>c.url!==f.origUrl&&URL.revokeObjectURL(c.url)); } S.flow=null; S.view="home"; render(); },
   pickCat:t=>{ S.flow.cat=t.dataset.cat; render(); },
   runStyle:()=>runStyle(),
   retryAnalysis:()=>runAnalysis(S.flow),
@@ -901,7 +924,7 @@ async function onSession(session){
   if(S.booted && uid===S.uid) return;
   S.booted=true;
   S.uid=uid; S.email=session?.user?.email||""; S.loaded=false; S.urls={};
-  S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home";
+  S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home"; S.socialAt=0; S.mineAt=0;
   if(!uid){ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); return; }
   render();
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
@@ -924,4 +947,9 @@ if(sb){
   sb.auth.onAuthStateChange((_ev,session)=>{ setTimeout(()=>onSession(session),0); });
   sb.auth.getSession().then(({data})=>onSession(data.session));
 } else render();
-document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&S.uid&&S.loaded){ loadMine().then(()=>softRender(["home","saved","closet"])).catch(()=>{}); } });
+// Coming back to the app: refresh at most once a minute, and only on list screens (not mid-log or mid-edit).
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState!=="visible"||!S.uid||!S.loaded||S.refreshing) return;
+  if(!["home","saved","closet"].includes(S.view) || Date.now()-(S.mineAt||0)<60e3) return;
+  S.refreshing=true; loadMine().then(()=>softRender(["home","saved","closet"])).catch(()=>{}).finally(()=>{ S.refreshing=false; });
+});
