@@ -247,7 +247,7 @@ function viewHome(){
   if(!S.loaded) out+=`<div class="note plain" style="margin-top:22px">Loading your fits…</div>`;
   else if(!S.fits.length) out+=`<div class="empty" style="margin-top:22px"><b>No fits yet</b><p class="small muted">Snap what you're wearing. WearAbout guesses the occasion, puts you on a fresh backdrop, scores it, and suggests one tweak and maybe one buy.</p></div>`;
   else if(!list.length) out+=`<div class="empty" style="margin-top:22px"><p class="small muted">No fits match ${f.best?"Best":""}${f.best&&f.cat?" + ":""}${esc(f.cat||"")} yet.</p></div>`;
-  else out+=`<div class="grid" style="margin-top:16px">${list.map(x=>{ const d=longDate(x.created_at); return `<button class="card" data-act="openFit" data-id="${esc(x.id)}">
+  else out+=`<div class="grid" style="margin-top:16px">${list.map(x=>{ const d=longDate(x.created_at); return `<button class="card ${S.justSaved===x.id?"fresh":""}" data-act="openFit" data-id="${esc(x.id)}">
       <img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit, ${esc(d)}" loading="lazy">
       <span class="cbody"><span class="cdate">${esc(d)}</span><span class="pills">${x.score!=null?`<span class="spill">⭐ ${fmtScore(x.score)}/10</span>`:""}<span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span>${(x.analysis?.badges||[]).length?`<span class="bpill" title="${esc(x.analysis.badges.join(", "))}">${x.analysis.badges.map(badgeIcon).join("")}</span>`:""}</span></span></button>`; }).join("")}</div>`;
   return out;
@@ -391,10 +391,13 @@ async function saveFit(share=false){
     S.urls["fits:"+row.image_path]=f.comps[f.bg].url; S.urls["fits:"+row.thumb_path]=URL.createObjectURL(thumb);
     Promise.all(["tweak","buy"].filter(kind=>a && (f.recFb||{})[kind]==="up").map(kind=>saveIdea(data, kind).catch(console.error)))
       .then(()=>softRender(["saved"]));
-    S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
+    // Land on Fits so you see the new card at the top and the streak go up. Clear filters so it's visible.
+    S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.confirmDel=false;
+    if(!share){ S.view="home"; S.filter={cat:null,best:false}; S.justSaved=id; render(); scrollTo(0,0); S.justSaved=null; }
     const n=streakInfo().n, newNote=added?` · ${added} new piece${added===1?"":"s"} in your Closet`:"";
     toast((n>1?`Saved · ${n}-day streak`:"Saved · streak started")+newNote);
-    if(share) await openShare();
+    if(share){ S.shareBack="home"; await openShare();
+      if(S.view!=="share"){ S.view="home"; render(); } }   // photo didn't load: still land on Fits
   } catch(e){ console.error(e); f.saving=false; render(); toast("Couldn't save. Check your connection and try again."); }
 }
 
@@ -853,8 +856,8 @@ const ACT = {
   saveItems:async()=>{ const x=curFit(); x.items=(x.items||[]).filter(i=>i.label.trim()).map(i=>({...i,label:i.label.trim()}));
     try { x.items=await linkItems(x.items); } catch(e){ console.error(e); }
     const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); toast(error?"Couldn't save labels.":"Labels saved"); render(); },
-  share:()=>openShare(),
-  cancelShare:()=>{ S.share=null; S.view="fit"; render(); },
+  share:()=>{ S.shareBack="fit"; openShare(); },
+  cancelShare:()=>{ S.share=null; S.view=S.shareBack||"fit"; S.shareBack=null; render(); scrollTo(0,0); },
   postShare:()=>postShare(),
   deleteFit:()=>{ S.confirmDel=true; render(); },
   cancelDelete:()=>{ S.confirmDel=false; render(); },

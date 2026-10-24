@@ -271,3 +271,8 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .dimswrap[open] .mfoot .showwhen-open{display:inline}
 .dimswrap[open] .mfoot .showwhen-closed{display:none}
 .mnotes b{font-size:14px}
+
+/* New fit just saved: a soft glow so your eye finds it */
+.card.fresh{animation:freshglow 1.6s ease-out}
+@keyframes freshglow{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}40%{box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 30%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){.card.fresh{animation:none;outline:2px solid var(--accent)}}
