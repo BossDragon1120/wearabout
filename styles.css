@@ -92,7 +92,7 @@ p{margin:0}
 .note.plain{background:var(--chip)}
 
 /* flow */
-.photo{width:100%;border-radius:var(--r);display:block;max-height:58vh;object-fit:contain;background:var(--chip)}
+.photo{width:100%;aspect-ratio:3/4;border-radius:var(--r);display:block;max-height:58vh;object-fit:contain;background:var(--chip)}
 .field{display:flex;flex-direction:column;gap:6px}
 .field label{font-size:14px;font-weight:600}
 .input,textarea.input{width:100%;border:1.5px solid var(--line);background:var(--surface);border-radius:14px;padding:11px 14px}

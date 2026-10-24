@@ -160,15 +160,61 @@ function streakInfo(){
   return {n, loggedToday:days.has(today)};
 }
 
+
+/* ---------- screen updates ---------- */
+// Update the screen in place instead of rebuilding it: photos don't flash, an open breakdown stays open,
+// sideways-scrolled chip rows keep their place, and the field you're typing in keeps focus and the keyboard.
+const keyOf = n => n.nodeType===1 ? (n.id || n.getAttribute("data-key") || null) : null;
+function syncAttrs(from, to){
+  for(const a of [...from.attributes]) if(!to.hasAttribute(a.name) && !(from.tagName==="DETAILS" && a.name==="open")) from.removeAttribute(a.name);
+  for(const a of [...to.attributes]) if(from.getAttribute(a.name)!==a.value && !(from.tagName==="DETAILS" && a.name==="open")) from.setAttribute(a.name, a.value);
+}
+function morphEl(from, to){
+  if(from.isEqualNode(to)) return;
+  const tag=from.tagName, typing = from===document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(tag);
+  syncAttrs(from, to);
+  if(tag==="INPUT"){
+    if(!typing && from.type!=="file") from.value = to.getAttribute("value") ?? "";
+    if(from.type==="checkbox"||from.type==="radio") from.checked = to.hasAttribute("checked");
+    return;
+  }
+  if(tag==="TEXTAREA"){ if(!typing) from.value = to.textContent; return; }
+  if(tag==="CANVAS") return;                       // drawn by code, keep its pixels
+  morphChildren(from, to);
+  if(tag==="SELECT" && !typing){ const i=[...to.options].findIndex(o=>o.hasAttribute("selected")); from.selectedIndex = i<0?0:i; }
+}
+function morphChildren(from, to){
+  const keyed=new Map(); for(const c of from.childNodes){ const k=keyOf(c); if(k) keyed.set(k,c); }
+  let cur=from.firstChild;
+  for(const next of [...to.childNodes]){
+    const k=keyOf(next); let match=null;
+    if(k){ match=keyed.get(k); if(match && match.tagName!==next.tagName) match=null; }
+    else if(cur && !keyOf(cur) && cur.nodeType===next.nodeType && cur.nodeName===next.nodeName) match=cur;
+    if(match){
+      if(match!==cur) from.insertBefore(match, cur);
+      if(match.nodeType===1) morphEl(match, next); else if(match.nodeValue!==next.nodeValue) match.nodeValue=next.nodeValue;
+      cur=match.nextSibling;
+    } else from.insertBefore(next, cur);
+  }
+  while(cur){ const n=cur.nextSibling; from.removeChild(cur); cur=n; }
+}
+function setHTML(el, html){
+  if(!el.firstChild){ el.innerHTML=html; return; }
+  const t=document.createElement("template"); t.innerHTML=html; morphChildren(el, t.content);
+}
+
 /* ---------- render ---------- */
 function render(){
   const m=$("#main"), signedIn=!!S.uid;
   $("#appbar").hidden=!signedIn;
-  if(!CONFIGURED){ m.innerHTML=`<div class="auth"><div class="mark">Wear<span>About</span></div><div class="note">Almost there. Add your Supabase address and key to <b>config.js</b> (see the README), then reload.</div></div>`; return; }
-  if(!signedIn){ m.innerHTML=viewAuth(); return; }
+  if(!CONFIGURED){ setHTML(m,`<div class="auth"><div class="mark">Wear<span>About</span></div><div class="note">Almost there. Add your Supabase address and key to <b>config.js</b> (see the README), then reload.</div></div>`); return; }
+  if(!signedIn){ setHTML(m, viewAuth()); return; }
   renderTabs();
   const v=S.view;
-  m.innerHTML = v==="flow"?(S.flow&&S.flow.step==="result"?viewResult():viewFlow()) : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
+  const prev=S.renderedView; S.renderedView=v+"|"+(S.flow?S.flow.step:"")+"|"+(S.fitId||"")+"|"+(S.itemId||"");
+  const html = v==="flow"?(S.flow&&S.flow.step==="result"?viewResult():viewFlow()) : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
+  // A different screen starts fresh (so old open panels don't carry over); the same screen updates in place.
+  if(prev!==S.renderedView) m.innerHTML=html; else setHTML(m, html);
   if(v==="share") drawShare();
 }
 function softRender(views){
@@ -179,7 +225,7 @@ function renderTabs(){
   const homeish=["home","fit","flow","share"].includes(S.view);
   const on=id=>id==="home"?homeish:id==="closet"?["closet","item"].includes(S.view):S.view===id;
   const t=(id,label,icon)=>`<button class="tab ${on(id)?"on":""}" data-act="nav" data-view="${id}" aria-current="${on(id)?"page":"false"}">${icon}<span>${label}</span></button>`;
-  $("#tabs").innerHTML=t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Ideas",ICON.bulb)+t("friends","Friends",ICON.people)+t("closet","Closet",ICON.closet);
+  setHTML($("#tabs"), t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Ideas",ICON.bulb)+t("friends","Friends",ICON.people)+t("closet","Closet",ICON.closet));
 }
 
 /* --- sign in --- */
@@ -247,7 +293,7 @@ function viewHome(){
   if(!S.loaded) out+=`<div class="note plain" style="margin-top:22px">Loading your fits…</div>`;
   else if(!S.fits.length) out+=`<div class="empty" style="margin-top:22px"><b>No fits yet</b><p class="small muted">Snap what you're wearing. WearAbout guesses the occasion, puts you on a fresh backdrop, scores it, and suggests one tweak and maybe one buy.</p></div>`;
   else if(!list.length) out+=`<div class="empty" style="margin-top:22px"><p class="small muted">No fits match ${f.best?"Best":""}${f.best&&f.cat?" + ":""}${esc(f.cat||"")} yet.</p></div>`;
-  else out+=`<div class="grid" style="margin-top:16px">${list.map(x=>{ const d=longDate(x.created_at); return `<button class="card ${S.justSaved===x.id?"fresh":""}" data-act="openFit" data-id="${esc(x.id)}">
+  else out+=`<div class="grid" style="margin-top:16px">${list.map(x=>{ const d=longDate(x.created_at); return `<button class="card ${S.justSaved===x.id?"fresh":""}" data-key="fit-${esc(x.id)}" data-act="openFit" data-id="${esc(x.id)}">
       <img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit, ${esc(d)}" loading="lazy">
       <span class="cbody"><span class="cdate">${esc(d)}</span><span class="pills">${x.score!=null?`<span class="spill">⭐ ${fmtScore(x.score)}/10</span>`:""}<span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span>${(x.analysis?.badges||[]).length?`<span class="bpill" title="${esc(x.analysis.badges.join(", "))}">${x.analysis.badges.map(badgeIcon).join("")}</span>`:""}</span></span></button>`; }).join("")}</div>`;
   return out;
@@ -537,7 +583,7 @@ function viewFeed(){
   if(!S.posts.length) out+=`<div class="empty"><b>Nothing here yet</b><p class="small muted">Share a fit from its page, or add friends with your friend code. Mutual friends' posts show up here.</p><button class="btn sm" data-act="nav" data-view="friends">Add friends</button></div>`;
   for(const p of S.posts){
     const h=S.hearts[p.id]||{count:0,mine:false}, name=displayName(p.user_id);
-    out+=`<article class="post"><div class="head"><span class="avatar" style="background:${avatarColor(p.user_id)}">${esc(name.slice(0,1).toUpperCase())}</span>
+    out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head"><span class="avatar" style="background:${avatarColor(p.user_id)}">${esc(name.slice(0,1).toUpperCase())}</span>
       <div style="min-width:0"><b>${esc(name)}</b><div class="small muted">${CAT_EMOJI[p.category]||""} ${esc(p.category)}${p.detail?" · "+esc(p.detail):""} · ${esc(ago(p.created_at))}</div></div></div>
       <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
       <div class="body">${p.caption?`<p>${esc(p.caption)}</p>`:""}
@@ -565,7 +611,7 @@ function viewSaved(){
   if(!S.recs.length) out+=`<div class="empty"><b>No ideas yet</b><p class="small muted">Heart a tweak or buy rec on any fit and it lands here, ready to look up.</p></div>`;
   else if(!list.length) out+=`<div class="empty"><p class="small muted">No ${S.ideasFilter==="buy"?"buy":"tweak"} ideas saved yet.</p></div>`;
   for(const r of list){ const f=S.fits.find(x=>x.id===r.fit_id);
-    out+=`<div class="saved">${f?`<img src="${esc(url("fits",f.thumb_path))}" alt="">`:`<span></span>`}<div class="stack" style="gap:6px;min-width:0">
+    out+=`<div class="saved" data-key="rec-${esc(r.id)}">${f?`<img src="${esc(url("fits",f.thumb_path))}" alt="">`:`<span></span>`}<div class="stack" style="gap:6px;min-width:0">
       <span class="tag" style="color:var(--accent)">${r.kind==="buy"?"Buy":"Tweak"} · ${esc(r.category||"")}</span><b>${esc(r.title)}</b>
       ${r.detail?`<p class="small muted">${esc(r.detail)}</p>`:""}
       <div class="row"><a class="btn sm" href="${esc(google(r.query||r.title))}" target="_blank" rel="noopener noreferrer">${r.kind==="buy"?"Find it on Google":"See it on Google"}</a>
@@ -729,7 +775,7 @@ function viewCloset(){
   if(S.loaded && !live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;
   else for(const type of ITEM_TYPES){
     const group=sorted.filter(c=>(c.type||"other")===type); if(!group.length) continue;
-    out+=`<section class="cgroup"><h3>${TYPE_LABEL[type]} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<div class="swipe"><button class="swipe-del" data-act="swipeRemove" data-id="${esc(c.id)}" tabindex="-1">Remove</button><button class="citem" data-act="openItem" data-id="${esc(c.id)}">
+    out+=`<section class="cgroup"><h3>${TYPE_LABEL[type]} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<div class="swipe" data-key="piece-${esc(c.id)}"><button class="swipe-del" data-act="swipeRemove" data-id="${esc(c.id)}" tabindex="-1">Remove</button><button class="citem" data-act="openItem" data-id="${esc(c.id)}">
       ${pieceThumb(c,e)}<span class="ctext"><b>${esc(c.label)}</b><span class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</span></span>${ICON.chev}</button></div>`; }).join("")}</section>`;
   }
   return out+"</div>";
@@ -744,7 +790,7 @@ function viewItem(){
     ${c.crop_path&&url("fits",c.crop_path)?`<div class="crophero"><img src="${esc(url("fits",c.crop_path))}" alt="${esc(c.label)}">${c.swatch?`<span class="swatch lg" style="background:${esc(c.swatch)}" title="Main color"></span>`:""}</div>`:""}
     <div><span class="tag">${esc(TYPE_LABEL[c.type]||"Other")}</span><h2 style="margin-top:4px">${esc(c.label)}</h2>
       <p class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</p></div>
-    <div class="grid g3">${fits.map(x=>`<button class="card" data-act="openFit" data-id="${esc(x.id)}" data-from="item"><img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit" loading="lazy"><span class="cbody"><span class="cdate">${esc(longDate(x.created_at))}</span><span class="pills"><span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span></span></span></button>`).join("")}</div>
+    <div class="grid g3">${fits.map(x=>`<button class="card" data-key="ifit-${esc(x.id)}" data-act="openFit" data-id="${esc(x.id)}" data-from="item"><img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit" loading="lazy"><span class="cbody"><span class="cdate">${esc(longDate(x.created_at))}</span><span class="pills"><span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span></span></span></button>`).join("")}</div>
     <div class="panel"><h3>Edit</h3>
       <div class="field"><label for="itemLabel">Name</label><input class="input" id="itemLabel" maxlength="80" value="${esc(ed.label ?? c.label)}"></div>
       <div class="field"><label for="itemType">Type</label><select class="input" id="itemType">${ITEM_TYPES.map(t=>`<option value="${t}" ${t===(ed.type??c.type)?"selected":""}>${TYPE_LABEL[t]}</option>`).join("")}</select></div>
