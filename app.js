@@ -519,12 +519,11 @@ async function recFeedback(kind,val){
 }
 
 /* --- share --- */
-// The closet close-up for a plugged item, if it has one. Hats and glasses are left out while face blur is on,
+// The closet close-up for a plugged item, if it has one.
 // because their close-up can come from another day's photo and show your face.
 function plugCrop(it){
   const piece=it && it.item_id && S.closet.find(c=>c.id===it.item_id);
   if(!piece || !piece.crop_path || !url("fits",piece.crop_path)) return null;
-  if(S.share && S.share.blur.on && ["hat","eyewear"].includes(piece.type)) return null;
   return piece.crop_path;
 }
 /* --- "I'd love to chat about…" --- */
@@ -547,10 +546,6 @@ function viewShare(){
   return `<button class="back" data-act="cancelShare">${ICON.back} Back</button><div class="stack">
     <h2>Share your fit</h2>
     <canvas class="shareCanvas" id="shareCanvas" width="720" height="960" aria-label="Post preview"></canvas>
-    <div class="panel">
-      <label class="row" style="font-weight:600"><input type="checkbox" id="blurOn" ${sh.blur.on?"checked":""} style="width:18px;height:18px;accent-color:var(--accent)"> Blur my face</label>
-      ${sh.blur.on?`<p class="small muted">Tap the photo where your face is.</p><label class="small" for="blurSize">Blur size</label><input type="range" id="blurSize" min="4" max="30" value="${Math.round(sh.blur.r*100)}">`:""}
-    </div>
     <div class="field"><label for="caption">Caption (optional)</label><input class="input" id="caption" maxlength="140" value="${esc(sh.caption)}" placeholder="Where you're headed, how you feel">${x.detail?`<p class="small muted">Filled in from your occasion notes. Edit it for friends if you like; your saved fit stays as is.</p>`:""}</div>
     <div class="stack" style="gap:8px"><h3>Plug something you love</h3>
       ${(x.items||[]).length?x.items.map((it,i)=>{ const p=sh.plugs[i]; return `<div class="plug">
@@ -566,7 +561,7 @@ function viewShare(){
         ${S.myPhone?`<p class="small muted">Friends will reach you at ${esc(S.myPhone)}. <button class="link small" data-act="nav" data-view="friends">Change</button></p>`
         :`<div class="field"><label for="chatPhone">Your phone number</label><input class="input" id="chatPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(sh.phone)}" placeholder="(555) 123-4567"><p class="small muted">Only your mutual friends can see it, and only to text or call you. You can remove it anytime on the Friends tab.</p></div>`}`:""}
     </div>`:""}
-    <p class="small muted">Friends see the photo, occasion and caption. Your score stays private. Friends can only react with hearts.</p>
+    <p class="small muted">Only mutual friends see your post. Your score stays private, and friends can only react with hearts.</p>
     <button class="btn primary block" data-act="postShare" ${sh.posting?"disabled":""}>${sh.posting?"Posting…":"Post to friends"}</button>
   </div>`;
 }
@@ -575,18 +570,14 @@ async function openShare(){
   const { data, error } = await sb.storage.from("fits").download(x.image_path);
   if(error){ toast("Couldn't load this photo."); return; }
   const img=await loadImage(URL.createObjectURL(data));
-  S.share={img, blur:{on:false,x:.5,y:.2,r:.1}, caption:x.detail||"", plugs:{}, posting:false, chat:false, chatTopic:x.detail||OCC_TOPIC[x.category]||"", phone:""};
+  S.share={img, caption:x.detail||"", plugs:{}, posting:false, chat:false, chatTopic:x.detail||OCC_TOPIC[x.category]||"", phone:""};
   S.view="share"; render(); scrollTo(0,0);
+  if(!S.chatReady){ const ph=await sb.from("contacts").select("phone").eq("user_id",S.uid).maybeSingle();
+    if(!ph.error){ S.chatReady=true; S.myPhone=(ph.data&&ph.data.phone)||""; softRender(["share"]); } }
 }
 function drawShare(){
-  const c=$("#shareCanvas"); if(!c||!S.share) return; const ctx=c.getContext("2d"), {img,blur}=S.share, W=c.width, H=c.height;
+  const c=$("#shareCanvas"); if(!c||!S.share) return; const ctx=c.getContext("2d"), {img}=S.share, W=c.width, H=c.height;
   const s=Math.max(W/img.width,H/img.height), w=img.width*s, h=img.height*s; ctx.drawImage(img,(W-w)/2,(H-h)/2,w,h);
-  if(blur.on){
-    const cx=blur.x*W, cy=blur.y*H, r=blur.r*W, px=Math.max(6,r/5);
-    const t=document.createElement("canvas"); t.width=t.height=Math.max(1,Math.round(2*r/px));
-    t.getContext("2d").drawImage(c,cx-r,cy-r,2*r,2*r,0,0,t.width,t.height);
-    ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.clip(); ctx.imageSmoothingEnabled=false; ctx.drawImage(t,0,0,t.width,t.height,cx-r,cy-r,2*r,2*r); ctx.restore();
-  }
 }
 async function postShare(){
   const sh=S.share, x=curFit(); if(!sh||!x) return;
@@ -1217,8 +1208,6 @@ document.addEventListener("click", e=>{
   else if(!e.target.closest(".toast-undo")){ e.target.closest("#toast").hidden=true; return; }
   const ci=e.target.closest(".swipe .citem");
   if(ci && (ci.dataset.swiped || ci.classList.contains("open"))){ ci.classList.remove("open"); hideDel(ci); return; }
-  const c=e.target.closest("#shareCanvas");
-  if(c&&S.share&&S.share.blur.on){ const r=c.getBoundingClientRect(); S.share.blur.x=(e.clientX-r.left)/r.width; S.share.blur.y=(e.clientY-r.top)/r.height; drawShare(); return; }
   const t=e.target.closest("[data-act]"); if(!t||t.disabled) return; const f=ACT[t.dataset.act]; if(f) f(t,e);
 });
 document.addEventListener("submit", e=>{ if(e.target.id==="authForm"){ e.preventDefault(); submitAuth(); } });
@@ -1234,7 +1223,6 @@ document.addEventListener("input", e=>{
   else if(t.id==="phoneIn") S.phoneIn=t.value;
   else if(t.dataset.plugI!=null&&S.share){ S.share.plugs[t.dataset.plugI][t.dataset.field]=t.value;
     if(t.dataset.field==="brand"){ const it=curFit()?.items?.[t.dataset.plugI]; const hint=t.parentElement?.querySelector("p.small"); if(hint&&it) hint.textContent=`Friends get a Shop it button that searches for ${[t.value.trim(),it.label].filter(Boolean).join(" ")}.`; } }
-  else if(t.id==="blurSize"&&S.share){ S.share.blur.r=Number(t.value)/100; drawShare(); }
   else if(t.id==="codeIn") S.codeIn=t.value;
   else if(t.id==="handleIn") S.handleIn=t.value;
   else if(t.id==="goalIn") S.goalIn=t.value;
@@ -1248,7 +1236,6 @@ document.addEventListener("change", e=>{
   else if(t.id==="buyRecs") setBuyRecs(t.checked);
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
   else if(t.id==="chatOn"&&S.share){ S.share.chat=t.checked; render(); if(t.checked) setTimeout(()=>$("#chatTopic")?.focus(),0); }
-  else if(t.id==="blurOn"&&S.share){ S.share.blur.on=t.checked; render(); }
   else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn; if(t.checked) S.share.plugs[i]={brand:(curFit()?.items?.[i]?.brand)||"",review:""}; else delete S.share.plugs[i]; render(); }
 });
 
