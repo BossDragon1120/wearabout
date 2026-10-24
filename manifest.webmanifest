@@ -1,7 +1,7 @@
 {
   "name": "WearAbout",
   "short_name": "WearAbout",
-  "description": "Log your daily outfit, get a style score and one sharp rec, keep your streak.",
+  "description": "Snap your outfit, get a style score, and share your best fits with friends. Your closet builds itself as you go.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

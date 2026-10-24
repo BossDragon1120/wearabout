@@ -233,7 +233,7 @@ function viewAuth(){
   const a=S.auth;
   return `<form class="auth" id="authForm" novalidate>
     <div class="mark">Wear<span>About</span></div>
-    <p class="lead">Snap your outfit, get one sharp styling note, and keep your streak going.</p>
+    <p class="lead">Snap your outfit, get a style score, and share your best fits with friends. Your closet builds itself as you go.</p>
     ${pendingInvite()?`<div class="note">You've been invited by a friend. Sign in and you'll be connected automatically.</div>`:""}
     ${a.step==="email" ? `
       <div class="field"><label for="authEmail">Email</label>
