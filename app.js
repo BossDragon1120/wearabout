@@ -70,7 +70,7 @@ function toast(msg, undo){
   const t=$("#toast"); t.textContent=msg;
   if(undo){ const b=document.createElement("button"); b.className="toast-undo"; b.textContent="Undo";
     b.onclick=()=>{ t.hidden=true; Promise.resolve(undo()).catch(()=>toast("Couldn't undo. Try again.")); }; t.append(b); }
-  t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, undo?5000:msg.length>45?4200:2800);
+  t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, undo?5000:msg.length>45?3500:2200);
 }
 const url = (bucket,path) => S.urls[bucket+":"+path] || "";
 const me = () => S.uid;
@@ -906,6 +906,9 @@ const ACT = {
   authBack:()=>{ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); },
 };
 document.addEventListener("click", e=>{
+  // A message only confirms what you just did: once you tap anything else, it goes away.
+  if(!e.target.closest("#toast")){ const t=$("#toast"); if(t && !t.hidden){ t.hidden=true; clearTimeout(toastT); } }
+  else if(!e.target.closest(".toast-undo")){ e.target.closest("#toast").hidden=true; return; }
   const ci=e.target.closest(".swipe .citem");
   if(ci && (ci.dataset.swiped || ci.classList.contains("open"))){ ci.classList.remove("open"); hideDel(ci); return; }
   const c=e.target.closest("#shareCanvas");
