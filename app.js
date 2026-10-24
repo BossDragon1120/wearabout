@@ -14,9 +14,12 @@ const DIMS_GOAL = [["occasion_fit","Occasion fit",.25],["cohesion","Cohesion",.2
 const dimsFor = goal => goal ? DIMS_GOAL : DIMS;
 const BADGES = [["Nailed the occasion","🎯"],["Color play","🎨"],["Great proportions","📐"],["Texture mix","🧶"],["Statement piece","✨"],["Polished details","💎"],["Tonal dressing","🤍"],["Pattern mixing","🌀"],["On goal","🏆"]];
 const badgeIcon = n => (BADGES.find(b=>b[0]===n)||[,"🏅"])[1];
-const ITEM_TYPES = ["top","bottom","dress","jacket","outerwear","shoes","bag","belt","hat","scarf","eyewear","other"];
+const ITEM_TYPES = ["top","bottom","dress","jacket","outerwear","shoes","bag","accessory","belt","hat","scarf","eyewear","other"];
+// Closet sections. Accessories gathers the small extras: hats, sunglasses, scarves, belts, sports bras, cover-ups, running belts.
+const ACCESSORY_TYPES = ["accessory","hat","eyewear","scarf","belt"];
+const CLOSET_GROUPS = [["Tops",["top"]],["Bottoms",["bottom"]],["Dresses",["dress"]],["Jackets",["jacket"]],["Outerwear",["outerwear"]],["Shoes",["shoes"]],["Bags",["bag"]],["Accessories",ACCESSORY_TYPES],["Other",["other"]]];
 const BEST = 8;
-const TYPE_LABEL = {top:"Tops",bottom:"Bottoms",dress:"Dresses",jacket:"Jackets",outerwear:"Outerwear",shoes:"Shoes",bag:"Bags",belt:"Belts",hat:"Hats",scarf:"Scarves",eyewear:"Eyewear",other:"Other"};
+const TYPE_LABEL = {top:"Tops",bottom:"Bottoms",dress:"Dresses",jacket:"Jackets",outerwear:"Outerwear",shoes:"Shoes",bag:"Bags",accessory:"Accessories",belt:"Belts",hat:"Hats",scarf:"Scarves",eyewear:"Eyewear",other:"Other"};
 const CAT_EMOJI = {"Beach/Resort":"🏖️","Travel Day":"✈️","Active/Workout":"🏃","Casual/Hangout":"☕","Errands":"🛍️","WFH":"🏠","Office":"💼","Work Event":"🎤","Get Fancy":"🥂","Night Out":"🌙","Festival":"🎪"};
 const TAG_SVG = '<svg viewBox="0 0 24 14" width="24" height="14" aria-hidden="true"><path d="M8.4 1H20.6A2.4 2.4 0 0 1 23 3.4v7.2a2.4 2.4 0 0 1-2.4 2.4H8.4C5 13 1.6 9.6 1.6 7S5 1 8.4 1Z" fill="#F2C690"/><circle cx="6.6" cy="7" r="1.3" fill="#FFF7EC"/></svg>';
 const ICON = {
@@ -978,9 +981,9 @@ function viewCloset(){
   if(!S.loaded) out+=`<div class="note plain">Loading your closet…</div>`;
   else if(live.length) out+=`<p class="small muted">Swipe left to remove. Hold a piece and drag it onto its twin to merge.</p>`;
   if(S.loaded && !live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;
-  else for(const type of ITEM_TYPES){
-    const group=sorted.filter(c=>(c.type||"other")===type); if(!group.length) continue;
-    out+=`<section class="cgroup"><h3>${TYPE_LABEL[type]} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<div class="swipe" data-key="piece-${esc(c.id)}"><button class="swipe-del" data-act="swipeRemove" data-id="${esc(c.id)}" tabindex="-1">Remove</button><button class="citem" data-act="openItem" data-id="${esc(c.id)}">
+  else for(const [title,types] of CLOSET_GROUPS){
+    const group=sorted.filter(c=>types.includes(ITEM_TYPES.includes(c.type)?c.type:"other")); if(!group.length) continue;
+    out+=`<section class="cgroup"><h3>${title} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<div class="swipe" data-key="piece-${esc(c.id)}"><button class="swipe-del" data-act="swipeRemove" data-id="${esc(c.id)}" tabindex="-1">Remove</button><button class="citem" data-act="openItem" data-id="${esc(c.id)}">
       ${pieceThumb(c,e)}<span class="ctext"><b>${esc(c.label)}</b><span class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</span></span>${ICON.chev}</button></div>`; }).join("")}</section>`;
   }
   return out+mergeSheet()+"</div>";
@@ -996,6 +999,7 @@ const KINDS = {
   outerwear:[["trench"],["coat","overcoat"],["puffer","down"],["parka"],["vest","gilet"]],
   shoes:[["sneaker","trainer"],["loafer","flat","ballet"],["sandal","slide"],["mule","clog"],["boot"],["heel","pump","stiletto"]],
   bag:[["tote"],["shoulder"],["crossbody"],["clutch"],["backpack"],["belt bag","fanny"]],
+  accessory:[["hat","cap","beanie","visor","beret","bucket"],["sunglass","glasses","eyewear","frames"],["scarf","bandana"],["running belt","waist pack"],["belt"],["sports bra","bralette","bra"],["cover-up","coverup","sarong","kaftan","caftan","pareo"],["glove","mitten"],["sock","tights"],["headband","scrunchie","hair","clip"]],
 };
 // Color words in names, mapped to a representative color. Longer words are checked first ("light wash" before "wash").
 const COLOR_WORDS = {white:"#fafafa",ivory:"#f6f1e3",cream:"#f1e8d2",ecru:"#ece3cf",oatmeal:"#e3d7c1",beige:"#dccbab",sand:"#d8c39d",khaki:"#c3b091",tan:"#c4a27a",camel:"#b98b52",cognac:"#9a4f22",brown:"#6f4a2f",chocolate:"#4a2c1d",
@@ -1016,7 +1020,7 @@ function colorRank(hex){
 }
 function smartKey(c){
   const name=" "+normLabel(c.label)+" ";
-  const kinds=KINDS[c.type]||[];
+  const kinds=KINDS[ACCESSORY_TYPES.includes(c.type)?"accessory":c.type]||[];
   let kind=kinds.findIndex(words=>words.some(w=>name.includes(w))); if(kind<0) kind=kinds.length;
   const word=COLOR_KEYS.find(w=>new RegExp(`\\b${w}\\b`).test(name));
   if(isPatterned(c.label) || (!word && isMulti(c.swatch))) return [kind, 2, 0, 0];   // patterns after solid colors

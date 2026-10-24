@@ -36,7 +36,7 @@ const DIMS: [string, number][] = [["occasion_fit", .30], ["cohesion", .20], ["pr
 const DIMS_GOAL: [string, number][] = [["occasion_fit", .25], ["cohesion", .20], ["proportion", .20], ["color", .15], ["details", .10], ["goal", .10]];
 const BADGES = ["Nailed the occasion", "Color play", "Great proportions", "Texture mix", "Statement piece", "Polished details", "Tonal dressing", "Pattern mixing", "On goal"];
 const badgeNames = (goal: string) => BADGES.filter((n) => goal || n !== "On goal");
-const ITEM_TYPES = ["top", "bottom", "dress", "jacket", "outerwear", "shoes", "bag", "belt", "hat", "scarf", "eyewear", "other"];
+const ITEM_TYPES = ["top", "bottom", "dress", "jacket", "outerwear", "shoes", "bag", "accessory", "belt", "hat", "scarf", "eyewear", "other"];
 
 /* ------------------------------------------------------------------ Claude: occasion, score, recs, items */
 
@@ -70,7 +70,7 @@ ${goal ? `- goal: how well the outfit moves toward the user's own style goal, "$
 ${buy ? `"buy": {"item": the kind of item, described specifically without inventing a brand, "why": at most 25 words, "search": a 3-7 word Google search for it}.` : `"buy": null.`}
 "review": one or two warm, specific sentences on what works.
 "badges": 0 to 3 badges from this exact list, only when clearly earned (many outfits earn none): ${badgeNames(goal).join(", ")}.${goal ? ` "On goal" means the outfit clearly delivers on "${goal}".` : ""}
-"items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")} (use "jacket" for jackets, blazers, shackets and cardigans worn open; "outerwear" for coats, parkas and puffers), "brand": a string only if you are confident, else null, "clear": true only if the whole piece is plainly visible and you are certain of its type, color and material; false if it is partly hidden (for example shoes under long pants), cropped, blurry, in shadow, or you are unsure, "box": only when "clear" is true, the piece's position as [left, top, right, bottom] fractions of the photo's width and height (0 to 1), drawn tightly around that piece alone; otherwise null}.
+"items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")} (use "jacket" for jackets, blazers, shackets and cardigans worn open; "outerwear" for coats, parkas and puffers; "accessory" for sports bras, swim cover-ups, running belts and waist packs, gloves, socks and hair accessories; "hat", "eyewear" (including sunglasses), "scarf" and "belt" for those), "brand": a string only if you are confident, else null, "clear": true only if the whole piece is plainly visible and you are certain of its type, color and material; false if it is partly hidden (for example shoes under long pants), cropped, blurry, in shadow, or you are unsure, "box": only when "clear" is true, the piece's position as [left, top, right, bottom] fractions of the photo's width and height (0 to 1), drawn tightly around that piece alone; otherwise null}.
 If no outfit is visible, reply {"error":"<short reason>"} instead.${closet}
 
 Reply with only JSON in this shape:
