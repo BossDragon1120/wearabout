@@ -305,7 +305,7 @@ function viewFlow(){
   let out=`<button class="back" data-act="cancelFlow">${ICON.back} Cancel</button>`;
   if(f.step==="occasion"){
     out+=`<div class="stack">
-      <div class="photowrap"><img class="photo" src="${f.origUrl}" alt="Your outfit photo"><button class="btn sm changephoto" data-act="changePhoto">Change photo</button></div>
+      <div class="photowrap"><img class="photo" src="${f.origUrl}" alt="Your outfit photo"><button class="changephoto" data-act="changePhoto" aria-label="Change photo"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 21v-5h-5"/></svg>Change</button></div>
       <div class="stack" style="gap:8px"><h2>What's it for?</h2>
         <p class="small muted">${f.guessing?"Reading your outfit…":f.guess?`Best guess: <b>${esc(f.guess)}</b>${f.guessConf==="low"?" (not sure)":""}. Tap another if it's wrong.`:f.guessErr?esc(f.guessErr)+" Pick one below.":"Pick the occasion."}</p></div>
       <div class="chipgrid">${CATS.map(c=>`<button class="chip ${f.cat===c?"on":""} ${f.guess===c&&f.cat!==c?"guess":""}" data-act="pickCat" data-cat="${esc(c)}">${CAT_EMOJI[c]} ${esc(c)}</button>`).join("")}</div>
