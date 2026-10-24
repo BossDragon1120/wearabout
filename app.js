@@ -780,7 +780,7 @@ function viewCloset(){
   const sorted=[...live].sort(sorters[S.closetSort]||sorters.most);
   let out=`<div class="stack"><div class="countrow" style="margin-top:0"><span class="count">${live.length}</span><span class="countlbl">Piece${live.length===1?"":"s"} in your closet</span></div>
     <p class="small muted" style="margin-top:-6px">Built from your logged fits. Each new fit adds or matches pieces automatically.</p>
-    <div class="chips" role="toolbar" aria-label="Sort">${[["smart","✨ Smart"],["most","Most worn"],["recent","Recently worn"],["least","Least worn"]].map(([k,l])=>`<button class="chip ${S.closetSort===k?"on":""}" data-act="closetSort" data-sort="${k}" aria-pressed="${S.closetSort===k}">${l}</button>`).join("")}</div>`;
+    <div class="chips sortrow" role="toolbar" aria-label="Sort">${[["smart","✨ Smart"],["most","Most worn"],["least","Least worn"],["recent","Recent"]].map(([k,l])=>`<button class="chip ${S.closetSort===k?"on":""}" data-act="closetSort" data-sort="${k}" aria-pressed="${S.closetSort===k}">${l}</button>`).join("")}</div>`;
   if(!S.loaded) out+=`<div class="note plain">Loading your closet…</div>`;
   else if(live.length) out+=`<p class="small muted">Swipe a piece left to remove it.</p>`;
   if(S.loaded && !live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;

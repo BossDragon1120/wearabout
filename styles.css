@@ -280,3 +280,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 /* Occasion step: swap the photo without leaving */
 .photowrap{position:relative}
 .photowrap .changephoto{position:absolute;right:10px;top:10px;display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:0;border-radius:999px;font-family:inherit;font-size:12px;font-weight:600;line-height:1;color:#fff;background:rgba(0,0,0,.42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);cursor:pointer}
+
+/* Closet sort pills: always one row, sharing the width evenly */
+.chips.sortrow{display:flex;flex-wrap:nowrap;gap:6px}
+.chips.sortrow .chip{flex:1 1 auto;justify-content:center;padding:6px 8px;min-width:0}
