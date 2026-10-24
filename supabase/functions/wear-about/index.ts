@@ -93,7 +93,9 @@ function cleanBox(b: unknown): number[] | null {
   if (!Array.isArray(b) || b.length !== 4) return null;
   const [l, t, r, btm] = b.map(Number);
   if (![l, t, r, btm].every((n) => Number.isFinite(n) && n >= 0 && n <= 1)) return null;
-  if (r - l < 0.04 || btm - t < 0.04 || (r - l) * (btm - t) > 0.9) return null;
+  // Thin pieces are fine (a belt is only 2-3% of a full-length photo's height), as long as the box isn't a sliver or the whole photo.
+  const w = r - l, h = btm - t;
+  if (Math.max(w, h) < 0.04 || Math.min(w, h) < 0.008 || w * h > 0.9) return null;
   return [l, t, r, btm].map((n) => Math.round(n * 1000) / 1000);
 }
 

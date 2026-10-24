@@ -739,7 +739,7 @@ async function makeCrops(fit, photoBlob){
   for(const {it,piece} of todo){
     const [l,t,r,b]=it.box, pad=.06;
     const x0=Math.max(0,(l-pad*(r-l))*W), y0=Math.max(0,(t-pad*(b-t))*H), x1=Math.min(W,(r+pad*(r-l))*W), y1=Math.min(H,(b+pad*(b-t))*H);
-    const cw=x1-x0, ch=y1-y0; if(cw<24||ch<24) continue;
+    const cw=x1-x0, ch=y1-y0; if(Math.max(cw,ch)<48||Math.min(cw,ch)<6) continue;   // thin is fine (belts); the crop is square anyway
     // square-ish thumbnail, piece centered
     const side=Math.max(cw,ch), sx=Math.max(0,Math.min(W-side,x0+cw/2-side/2)), sy=Math.max(0,Math.min(H-side,y0+ch/2-side/2)), s2=Math.min(side,W,H);
     const c=document.createElement("canvas"); c.width=c.height=320;
