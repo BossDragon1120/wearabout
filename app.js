@@ -44,6 +44,17 @@ const S = {
   auth:{step:"email", email:"", code:"", busy:false, msg:""},
 };
 
+/* ---------- invites ---------- */
+// A friend's invite link looks like .../wearabout/?invite=ABC123. Keep the code until they're signed in.
+const APP_URL = location.origin + location.pathname;
+(function captureInvite(){
+  const code=new URLSearchParams(location.search).get("invite");
+  if(code && /^[A-Za-z0-9]{4,8}$/.test(code)){ try{ localStorage.setItem("wa_invite", code.toUpperCase()); }catch{} }
+  if(code){ const u=new URL(location.href); u.searchParams.delete("invite"); history.replaceState(null,"",u.pathname+u.search+u.hash); }
+})();
+const pendingInvite = () => { try{ return localStorage.getItem("wa_invite")||""; }catch{ return ""; } };
+const clearInvite = () => { try{ localStorage.removeItem("wa_invite"); }catch{} };
+
 /* ---------- helpers ---------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -169,6 +180,7 @@ function viewAuth(){
   return `<form class="auth" id="authForm" novalidate>
     <div class="mark">Wear<span>About</span></div>
     <p class="lead">Snap your outfit, get one sharp styling note, and keep your streak going.</p>
+    ${pendingInvite()?`<div class="note">You've been invited by a friend. Sign in and you'll be connected automatically.</div>`:""}
     ${a.step==="email" ? `
       <div class="field"><label for="authEmail">Email</label>
         <input class="input" id="authEmail" type="email" autocomplete="email" inputmode="email" value="${esc(a.email)}" placeholder="you@example.com" required></div>
@@ -525,6 +537,9 @@ function viewFriends(){
   const m=mutual(), pending=[...S.out].filter(id=>!S.inc.has(id)), incoming=[...S.inc].filter(id=>!S.out.has(id)), p=S.profile;
   const person=(id,extra,action="")=>`<div class="person"><span class="avatar" style="background:${avatarColor(id)}">${esc(displayName(id).slice(0,1).toUpperCase())}</span><div style="flex:1;min-width:0"><b>${esc(displayName(id))}</b>${extra}</div>${action}</div>`;
   return `<div class="stack"><h2>Friends</h2>
+    <div class="panel"><h3>Invite friends</h3>
+      <p class="small muted">Send the app link with your code built in. When they sign up, you'll see them under "Added you" — one tap to add back.</p>
+      <button class="btn primary" data-act="invite" ${p?"":"disabled"}>Invite friends</button></div>
     <div class="panel"><h3>Your friend code</h3>
       ${p?`<div class="row"><span class="code">${esc(p.friend_code)}</span><span class="spacer"></span><button class="btn sm" data-act="copyCode">Copy</button></div>`:`<p class="small muted">Loading…</p>`}
       <div class="field"><label for="handleIn">Name friends see</label><div class="row" style="flex-wrap:nowrap"><input class="input" id="handleIn" maxlength="30" value="${esc(S.handleIn ?? (p&&p.handle) ?? "")}" placeholder="e.g. Dana"><button class="btn sm" data-act="saveHandle">Save</button></div></div>
@@ -812,6 +827,13 @@ const ACT = {
     S.recs=S.recs.filter(z=>z.id!==r.id);
     const f=S.fits.find(x=>x.id===r.fit_id); if(f&&(f.rec_fb||{})[r.kind]==="up"){ f.rec_fb={...f.rec_fb,[r.kind]:null}; sb.from("fits").update({rec_fb:f.rec_fb}).eq("id",f.id); }
     render(); },
+  invite:async()=>{
+    const code=S.profile&&S.profile.friend_code; if(!code) return;
+    const name=(S.profile.handle||"").trim(), link=`${APP_URL}?invite=${code}`;
+    const text=`${name?name+" invited you":"Join me"} on WearAbout: log your outfits, get a style score, and share fits with friends. Sign up here: ${link} (my friend code is ${code})`;
+    try { if(navigator.share){ await navigator.share({title:"WearAbout", text}); return; } } catch(e){ if(e && e.name==="AbortError") return; }
+    try { await navigator.clipboard.writeText(text); toast("Invite copied. Paste it into a message."); } catch { toast("Your link: "+link); }
+  },
   copyCode:async()=>{ const c=S.profile&&S.profile.friend_code; try{ await navigator.clipboard.writeText(c); toast("Code copied"); }catch{ toast("Your code is "+c); } },
   saveHandle:async()=>{ const handle=String(S.handleIn ?? S.profile?.handle ?? "").trim().slice(0,30);
     const { error } = await sb.from("profiles").update({handle}).eq("id",S.uid);
@@ -882,7 +904,17 @@ async function onSession(session){
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
   S.loaded=true; render();
   backfillCloset().then(()=>softRender(["closet","item","fit"])).catch(console.error);
-  loadSocial().then(()=>softRender(["feed","friends"])).catch(console.error);
+  loadSocial().then(()=>acceptInvite()).then(()=>softRender(["feed","friends"])).catch(console.error);
+}
+async function acceptInvite(){
+  const code=pendingInvite(); if(!code || !S.uid) return;
+  try {
+    const { data, error } = await sb.rpc("find_by_code",{code}); if(error) throw error;
+    const hit=(data||[])[0]; clearInvite();
+    if(!hit || hit.id===S.uid || S.out.has(hit.id)) return;
+    S.people[hit.id]={id:hit.id,handle:hit.handle}; await addFriend(hit.id);
+    toast(S.inc.has(hit.id) ? `You and ${hit.handle||"your friend"} are now friends` : `You added ${hit.handle||"your friend"}. Once they add you back, you'll see each other's fits.`);
+  } catch(e){ console.error("invite",e); }
 }
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 if(sb){
