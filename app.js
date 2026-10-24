@@ -1265,8 +1265,10 @@ async function acceptInvite(){
   const code=pendingInvite(); if(!code || !S.uid) return;
   try {
     const { data, error } = await sb.rpc("find_by_code",{code}); if(error) throw error;
-    const hit=(data||[])[0]; clearInvite();
-    if(!hit || hit.id===S.uid || S.out.has(hit.id)) return;
+    const hit=(data||[])[0];
+    if(hit && hit.id===S.uid) return;   // your own invite link: keep it for whoever signs in next (e.g. a friend on this phone)
+    clearInvite();
+    if(!hit || S.out.has(hit.id)) return;
     S.people[hit.id]={id:hit.id,handle:hit.handle}; await addFriend(hit.id);
     toast(S.inc.has(hit.id) ? `You and ${hit.handle||"your friend"} are now friends` : `You added ${hit.handle||"your friend"}. Once they add you back, you'll see each other's fits.`);
   } catch(e){ console.error("invite",e); }
@@ -1279,6 +1281,7 @@ if(sb){
 // Coming back to the app: refresh at most once a minute, and only on list screens (not mid-log or mid-edit).
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState!=="visible"||!S.uid||!S.loaded||S.refreshing) return;
+  if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3){ loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); return; }
   if(!["home","saved","closet"].includes(S.view) || Date.now()-(S.mineAt||0)<60e3) return;
   S.refreshing=true; loadMine().then(()=>softRender(["home","saved","closet"])).catch(()=>{}).finally(()=>{ S.refreshing=false; });
 });
