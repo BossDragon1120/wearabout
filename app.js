@@ -76,10 +76,10 @@ function addDays(ds,n){ const [y,m,d]=ds.split("-").map(Number); return localDat
 const longDate = ts => new Date(ts).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
 function ago(ts){ const s=(Date.now()-new Date(ts))/1000; if(s<60) return "just now"; if(s<3600) return Math.floor(s/60)+"m ago"; if(s<86400) return Math.floor(s/3600)+"h ago"; if(s<604800) return Math.floor(s/86400)+"d ago"; return longDate(ts); }
 let toastT;
-function toast(msg, undo){
+function toast(msg, undo, label="Undo"){
   const t=$("#toast"); t.textContent=msg;
-  if(undo){ const b=document.createElement("button"); b.className="toast-undo"; b.textContent="Undo";
-    b.onclick=()=>{ t.hidden=true; Promise.resolve(undo()).catch(()=>toast("Couldn't undo. Try again.")); }; t.append(b); }
+  if(undo){ const b=document.createElement("button"); b.className="toast-undo"; b.textContent=label;
+    b.onclick=()=>{ t.hidden=true; Promise.resolve(undo()).catch(()=>toast(label==="Undo"?"Couldn't undo. Try again.":"Something went wrong. Try again.")); }; t.append(b); }
   t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, undo?5000:msg.length>45?3500:2200);
 }
 const url = (bucket,path) => S.urls[bucket+":"+path] || "";
@@ -180,6 +180,7 @@ async function loadSocial(){
   const hearts={};
   (h.data||[]).forEach(x=>{ const e=hearts[x.post_id]||(hearts[x.post_id]={count:0,mine:false}); e.count++; if(x.user_id===S.uid) e.mine=true; });
   S.posts=list; S.hearts=hearts; S.socialAt=Date.now();
+  if(S.postCount===undefined||S.postCount===0){ const { count } = await sb.from("posts").select("id",{count:"exact",head:true}).eq("user_id",S.uid); S.postCount=count||0; }
   // When each friendship became mutual (the later of the two sides), for the "new friend" dot.
   const since={}; (fr||[]).forEach(x=>{ const other=x.user_id===S.uid?x.friend_id:x.user_id; since[other]=since[other]&&since[other]>x.created_at?since[other]:x.created_at; });
   S.friendSince=since; updateBadges();
@@ -331,11 +332,32 @@ function goalRow(){
     <p class="small muted">Counts for 10% of each new fit's score.${S.goal?` <button class="link small" data-act="clearGoal">Remove goal</button>`:""}</p></div>`;
   return `<div class="goalrow">🧭 <span>${S.goal?`Style goal: <b>${esc(S.goal)}</b>`:"Add a style goal to your score"}</span><button class="link small" data-act="editGoal">${S.goal?"Edit":"Set one"}</button></div>`;
 }
+/* --- getting people to the first fit and the first post (no names: people may not set a real one) --- */
+const FIRST_FIT_LINES = ["Your closet’s waiting. Show us today’s look.","Don’t be shy. Flaunt it.","Mirror selfie? Perfect. That’s all it takes.","Day one of your streak is one photo away."];
+const pick = (list, key) => list[(S.pickSeed ?? (S.pickSeed=Math.floor(Math.random()*1000)) ) % list.length];
+function firstPostLine(){
+  const friendPosted=S.posts.some(p=>p.user_id!==S.uid);
+  const x=S.fits[0], occ=x && {"Night Out":"night out","Get Fancy":"dressed-up","Festival":"festival","Travel Day":"travel day","Beach/Resort":"beach","Work Event":"work event"}[x.category];
+  const lines=["Your friends haven’t seen your style yet."];
+  if(occ) lines.push(`That ${occ} fit deserves an audience ${CAT_EMOJI[x.category]||"✨"}`);
+  if(friendPosted) return "Your friends are posting. Share yours and say hi 👋";
+  return pick(lines);
+}
+const neverPosted = () => S.postCount===0 && !S.posts.some(p=>p.user_id===S.uid);
+function welcomeCard(){
+  return `<div class="welcome"><p class="welcome-kicker">Welcome to WearAbout</p><h2>${esc(pick(FIRST_FIT_LINES))}</h2>
+    <button class="btn primary block lg" data-act="log">📸 Snap today’s fit</button><button class="link small" data-act="skipWelcome">Skip for now</button></div>`;
+}
+function firstPostCard(){
+  return `<div class="nudge"><span class="nudge-text"><b>${esc(firstPostLine())}</b><span class="small muted">One tap to share. Your score always stays private.</span></span>
+    <button class="btn sm primary" data-act="shareLatest">Share it</button><button class="iconbtn" data-act="dismissNudge" aria-label="Not now">${ICON.x}</button></div>`;
+}
 function viewHome(){
   const st=streakInfo(), f=S.filter;
   const title = st.n ? `🔥 ${st.n}-day streak` : "Log today's fit";
   const sub = st.loggedToday ? "Today's fit is in. Add another anytime." : st.n ? "Keep your streak alive — what are you wearing?" : "Start your streak — what are you wearing?";
-  let out=`<button class="logbanner" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
+  if(S.loaded && !S.fits.length && !S.welcomeSkipped) return welcomeCard();
+  let out=(S.loaded && S.fits.length && mutual().length && neverPosted() && !S.nudgeDismissed ? firstPostCard() : "")+`<button class="logbanner" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
     <div class="countrow"><span class="count">${S.fits.length}</span><span class="countlbl">Outfit${S.fits.length===1?"":"s"} logged</span></div>
     ${goalRow()}
     <div class="chips" role="toolbar" aria-label="Filters" style="margin-top:12px">
@@ -499,8 +521,15 @@ async function saveFit(share=false){
     if(!share){ S.view="home"; S.filter={cat:null,best:false}; S.justSaved=id; render(); scrollTo(0,0); S.justSaved=null; }
     const n=streakInfo().n, newNote=added?` · ${added} new piece${added===1?"":"s"} in your Closet`:"";
     const savedMsg=(n>1?`Saved · ${n}-day streak`:"Saved · streak started")+newNote;
+    const firstFit = S.fits.length===1;
+    if(firstFit) celebrate();
     // Sharing: hold the message until you post or back out, so it never sits on top of the share screen.
-    if(!share) toast(savedMsg);
+    if(!share){
+      if(firstFit) toast("🎉 First fit logged · welcome to WearAbout!");
+      // A strong score and friends to show: offer to share right then.
+      else if(a && a.score>=7.5 && mutual().length) toast(savedMsg+" · love this one?", ()=>{ S.fitId=id; S.shareBack="home"; return openShare(main); }, "Share it");
+      else toast(savedMsg);
+    }
     else { S.shareBack="home"; S.savedMsg=savedMsg; await openShare(main);
       if(S.view!=="share"){ S.view="home"; render(); toast(savedMsg); S.savedMsg=null; } }   // photo didn't load: still land on Fits
   } catch(e){ console.error(e); f.saving=false; render(); toast("Couldn't save. Check your connection and try again."); }
@@ -599,6 +628,7 @@ function viewShare(){
   const sh=S.share, x=curFit(); if(!sh||!x) return "";
   return `<button class="back" data-act="cancelShare">${ICON.back} Back</button><div class="stack">
     <h2>Share your fit</h2>
+    ${neverPosted()?`<div class="note">Your first post! Friends see the photo and caption. Your score always stays private.</div>`:""}
     <canvas class="shareCanvas" id="shareCanvas" width="720" height="960" aria-label="Post preview"></canvas>
     <div class="field"><label for="caption">Caption (optional)</label><input class="input" id="caption" maxlength="140" value="${esc(sh.caption)}" placeholder="Where you're headed: Fleet Week, dinner date…">${x.detail?`<p class="small muted">Your caption from logging this fit. Edit it for friends if you like; your saved fit keeps the original.</p>`:""}</div>
     <div class="stack" style="gap:8px"><h3>Plug one piece you love</h3>
@@ -663,7 +693,7 @@ async function postShare(){
       ...(sh.chat?{chat_topic:topic, chat_until:new Date(Date.now()+CHAT_HOURS*3600e3).toISOString()}:{})});
     if(error) throw error;
     S.urls["posts:"+path]=URL.createObjectURL(blob);
-    S.share=null; S.view="feed"; await loadSocial(); render(); scrollTo(0,0); toast(sh.chat ? `Posted · friends can reach you until ${untilTime(Date.now()+CHAT_HOURS*3600e3)} tomorrow 💬` : S.savedMsg ? S.savedMsg.replace(/^Saved/,"Posted") : "Posted to friends"); S.savedMsg=null;
+    S.postCount=(S.postCount||0)+1; S.share=null; S.view="feed"; await loadSocial(); render(); scrollTo(0,0); toast(sh.chat ? `Posted · friends can reach you until ${untilTime(Date.now()+CHAT_HOURS*3600e3)} tomorrow 💬` : S.savedMsg ? S.savedMsg.replace(/^Saved/,"Posted") : "Posted to friends"); S.savedMsg=null;
   } catch(e){ console.error(e); sh.posting=false; render(); toast("Couldn't post. Try again."); }
 }
 
@@ -866,6 +896,16 @@ async function saveAvatar(){
     S.profile={...S.profile, avatar_path:path}; S.urls["avatars:"+path]=URL.createObjectURL(blob);
     S.avatarEdit=null; render(); toast("Photo saved");
   } catch(e){ console.error(e); a.busy=false; render(); drawAvatar(); toast("Couldn't save your photo. Try again."); }
+}
+// A short confetti burst for the first fit. Skipped for people who prefer less motion.
+function celebrate(){
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const box=document.createElement("div"); box.className="confetti"; box.setAttribute("aria-hidden","true");
+  const colors=["#5B3FD0","#C99B52","#ff5a6e","#3FA47A","#4A8FE7"];
+  for(let i=0;i<60;i++){ const s=document.createElement("i");
+    s.style.cssText=`left:${Math.random()*100}%;background:${colors[i%colors.length]};animation-delay:${Math.random()*0.25}s;animation-duration:${1.1+Math.random()*0.9}s;transform:rotate(${Math.random()*360}deg)`;
+    box.append(s); }
+  document.body.append(box); setTimeout(()=>box.remove(), 2600);
 }
 async function addFriend(id){
   const { error } = await sb.from("friendships").insert({friend_id:id});
@@ -1349,6 +1389,9 @@ const ACT = {
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
   pushOn:()=>pushOn(),
+  skipWelcome:()=>{ S.welcomeSkipped=true; render(); },
+  dismissNudge:()=>{ S.nudgeDismissed=true; render(); },
+  shareLatest:()=>{ const x=S.fits[0]; if(!x) return; S.fitId=x.id; S.shareBack="home"; openShare(); },
   pushOff:()=>pushOff(),
   avatarPick:()=>{ const i=$("#avatarIn"); i.value=""; i.click(); },
   avatarFromFits:()=>{ S.avatarEdit={choosing:true}; render(); },
@@ -1457,13 +1500,13 @@ async function onSession(session){
   S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home"; S.socialAt=0; S.mineAt=0;
   // Switching accounts: nothing typed or loaded for the last person carries over.
   Object.assign(S,{flow:null, share:null, fitId:null, itemId:null, hearts:{}, phones:{}, myPhone:"", chatReady:false, palettes:{}, swatchSeen:{}, codeIn:"", handleIn:null, phoneIn:null, friendMsg:"",
-    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, avatarEdit:null, dotFeed:false, dotFriends:false, toldFriends:false, friendSince:{}, pushState:null, notifyReady:false, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
+    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, avatarEdit:null, dotFeed:false, dotFriends:false, postCount:undefined, welcomeSkipped:false, nudgeDismissed:false, toldFriends:false, friendSince:{}, pushState:null, notifyReady:false, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
   if(!uid){ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); return; }
   render();
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
   S.loaded=true; if(START_VIEW && !S.startedFromLink){ S.startedFromLink=true; S.view=START_VIEW; seenSet(START_VIEW); } render();
   backfillCloset().then(()=>softRender(["closet","item","fit"])).then(()=>fillCloseups()).catch(console.error);
-  loadSocial().then(()=>acceptInvite()).then(()=>softRender(["feed","friends"])).catch(console.error);
+  loadSocial().then(()=>acceptInvite()).then(()=>softRender(["feed","friends","home"])).catch(console.error);
 }
 async function acceptInvite(){
   const code=pendingInvite(), tok=pendingToken(); if(!(code||tok) || !S.uid) return;
