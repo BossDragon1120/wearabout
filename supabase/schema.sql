@@ -82,9 +82,18 @@ create table public.posts (
   caption text not null default '' check (char_length(caption) <= 140),
   plugs jsonb not null default '[]',        -- [{label, link, review}]
   badges jsonb not null default '[]',       -- badge names the fit earned, shown to friends
-  image_path text not null                  -- posts/<uid>/<id>.jpg
+  image_path text not null,                 -- posts/<uid>/<id>.jpg
+  chat_topic text not null default '' check (char_length(chat_topic) <= 60),  -- "I'd love to chat about…"
+  chat_until timestamptz                    -- the chat invitation shows until this time
 );
 create index posts_created on public.posts (created_at desc);
+
+-- Your phone number, so mutual friends can text or call you from a chat invitation.
+create table public.contacts (
+  user_id uuid primary key default auth.uid() references auth.users on delete cascade,
+  phone text not null check (char_length(phone) between 7 and 20),
+  updated_at timestamptz not null default now()
+);
 
 create table public.hearts (
   user_id uuid not null default auth.uid() references auth.users on delete cascade,
@@ -150,6 +159,7 @@ alter table public.closet_items enable row level security;
 alter table public.friendships enable row level security;
 alter table public.posts enable row level security;
 alter table public.hearts enable row level security;
+alter table public.contacts enable row level security;
 alter table public.ai_usage enable row level security;   -- no policies: app cannot read or write it
 
 -- profiles: you, and anyone connected to you in either direction
@@ -188,6 +198,16 @@ create policy "post my fits" on public.posts for insert to authenticated
   with check (user_id = auth.uid());
 create policy "remove my posts" on public.posts for delete to authenticated
   using (user_id = auth.uid());
+create policy "update my posts" on public.posts for update to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+revoke update on public.posts from authenticated;
+grant update (chat_until) on public.posts to authenticated;   -- only to end a chat invitation early
+
+-- contacts: your number is readable only by you and mutual friends
+create policy "own number" on public.contacts for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "mutual friends see number" on public.contacts for select to authenticated
+  using (public.is_mutual(auth.uid(), user_id));
 
 -- hearts: visible on posts you can see; you add or remove your own
 create policy "see hearts on visible posts" on public.hearts for select to authenticated

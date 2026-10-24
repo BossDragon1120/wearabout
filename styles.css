@@ -307,3 +307,13 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .swpick{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .swopt{width:30px;height:30px;border-radius:50%;border:1px solid rgba(0,0,0,.15);padding:0}
 .swopt.on{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--accent)}
+
+/* "I'd love to chat about…" */
+.chatpanel{border:1.5px solid var(--line);border-radius:18px;padding:14px;background:var(--surface);display:flex;flex-direction:column;gap:12px}
+.chatpanel.on{border-color:color-mix(in srgb,var(--gold) 70%,var(--line));background:color-mix(in srgb,var(--gold) 8%,var(--surface))}
+.chatcard{border-radius:16px;padding:12px 14px;background:color-mix(in srgb,var(--gold) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--gold) 45%,transparent);display:flex;flex-direction:column;gap:10px}
+.chatcard .chatline{display:flex;gap:10px;align-items:flex-start;font-size:16px;line-height:1.35}
+.chatcard .chatic{font-size:20px;line-height:1}
+.chatcard .btn{text-decoration:none}
+.chatcard.mine{background:var(--chip);border-color:var(--line)}
+.chatpanel .switchrow{border:0;padding:0;background:none;box-shadow:none}

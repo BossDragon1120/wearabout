@@ -118,16 +118,18 @@ async function callFn(name, payload, asBlob=false){
 async function loadMine(){
   // Photo links are signed for 6 hours; start fresh after 5 so a long-open app never shows broken images.
   if(!S.urlsAt || Date.now()-S.urlsAt > 5*3600e3){ S.urls={}; S.urlsAt=Date.now(); }
-  const [f,r,p,g,c] = await Promise.all([
+  const [f,r,p,g,c,ph] = await Promise.all([
     sb.from("fits").select("*").order("created_at",{ascending:false}).limit(1000),
     sb.from("saved_recs").select("*").order("created_at",{ascending:false}),
     sb.from("profiles").select("*").eq("id",S.uid).maybeSingle(),
     sb.from("user_settings").select("*").eq("user_id",S.uid).maybeSingle(),
     sb.from("closet_items").select("*").order("created_at",{ascending:true}),
+    sb.from("contacts").select("phone").eq("user_id",S.uid).maybeSingle(),
   ]);
   S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null; S.goal=(g.data&&g.data.style_goal)||"";
   S.buyRecs=!(g.data && g.data.buy_recs===false);
   S.closetReady=!c.error; S.closet=c.data||[];
+  S.chatReady=!ph.error; S.myPhone=(ph.data&&ph.data.phone)||"";
   await signUrls("fits", [...S.fits.map(x=>x.thumb_path), ...S.closet.map(c=>c.crop_path).filter(Boolean)]);
   S.mineAt=Date.now();
 }
@@ -141,11 +143,14 @@ async function loadSocial(){
   S.inc=new Set((fr||[]).filter(x=>x.friend_id===S.uid).map(x=>x.user_id));
   const ids=[...new Set([...S.out,...S.inc])].filter(id=>!S.people[id]);
   const list=posts||[];
-  const [pr, h] = await Promise.all([
+  const chatters=[...new Set(list.filter(p=>chatOpen(p)&&p.user_id!==S.uid).map(p=>p.user_id))];
+  const [pr, h, , ct] = await Promise.all([
     ids.length ? sb.from("profiles").select("id,handle").in("id",ids) : {data:[]},
     list.length ? sb.from("hearts").select("post_id,user_id").in("post_id",list.map(p=>p.id)) : {data:[]},
     signUrls("posts", list.flatMap(p=>[p.image_path, ...(p.plugs||[]).map(g=>g.img).filter(Boolean)])),
+    chatters.length ? sb.from("contacts").select("user_id,phone").in("user_id",chatters) : {data:[]},
   ]);
+  S.phones={}; (ct&&ct.data||[]).forEach(x=>S.phones[x.user_id]=x.phone);
   (pr.data||[]).forEach(p=>S.people[p.id]=p);
   const hearts={};
   (h.data||[]).forEach(x=>{ const e=hearts[x.post_id]||(hearts[x.post_id]={count:0,mine:false}); e.count++; if(x.user_id===S.uid) e.mine=true; });
@@ -517,6 +522,21 @@ function plugCrop(it){
   if(S.share && S.share.blur.on && ["hat","eyewear"].includes(piece.type)) return null;
   return piece.crop_path;
 }
+/* --- "I'd love to chat about…" --- */
+const CHAT_HOURS=24;
+const OCC_TOPIC={"Casual/Hangout":"my hangout","Errands":"my errands day","Office":"my day at the office","WFH":"my work-from-home day","Active/Workout":"my workout","Night Out":"my night out","Work Event":"my work event","Get Fancy":"my big night","Travel Day":"my trip","Festival":"the festival","Beach/Resort":"my beach day"};
+const chatOpen = p => !!(p && p.chat_topic && p.chat_until && new Date(p.chat_until) > new Date());
+const cleanPhone = v => { const t=String(v||"").trim(), d=t.replace(/\D/g,""); return d.length>=7&&d.length<=15 ? (t.startsWith("+")?"+":"")+d : ""; };
+const firstName = id => displayName(id).split(/\s+/)[0];
+// The topic as the friend would say it back: "my night out" becomes "your night out".
+const yourTopic = t => t.replace(/^my\b/i,"your");
+function chatLinks(p){
+  const phone=S.phones&&S.phones[p.user_id]; if(!phone) return null;
+  const msg=`Hi ${firstName(p.user_id)}! Saw your fit 💛 Tell me all about ${yourTopic(p.chat_topic)}!`;
+  const sep=/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)?"&":"?";
+  return { text:`sms:${phone}${sep}body=${encodeURIComponent(msg)}`, call:`tel:${phone}` };
+}
+function untilTime(ts){ return new Date(ts).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
 function viewShare(){
   const sh=S.share, x=curFit(); if(!sh||!x) return "";
   return `<button class="back" data-act="cancelShare">${ICON.back} Back</button><div class="stack">
@@ -534,6 +554,13 @@ function viewShare(){
         <textarea class="input" data-plug-i="${i}" data-field="review" maxlength="160" placeholder="Why you love it (optional)">${esc(p.review)}</textarea>
         <p class="small muted">Friends get a Shop it button that searches for ${esc([p.brand, it.label].filter(Boolean).join(" "))}.${plugCrop(it)?" They'll see this close-up too.":""}</p>`:""}</div>`; }).join(""):`<p class="small muted">No items were listed for this fit.</p>`}
     </div>
+    ${S.chatReady?`<div class="chatpanel ${sh.chat?"on":""}">
+      <label class="switchrow" for="chatOn"><span><b>💬 I'd love to chat</b><span class="small muted">Invite friends to text or call you about this, for the next ${CHAT_HOURS} hours.</span></span>
+        <input type="checkbox" id="chatOn" class="switch" role="switch" ${sh.chat?"checked":""}></label>
+      ${sh.chat?`<div class="field"><label for="chatTopic">I'd love to chat about…</label><input class="input" id="chatTopic" maxlength="60" value="${esc(sh.chatTopic)}" placeholder="Fleet Week, the concert, my trip"></div>
+        ${S.myPhone?`<p class="small muted">Friends will reach you at ${esc(S.myPhone)}. <button class="link small" data-act="nav" data-view="friends">Change</button></p>`
+        :`<div class="field"><label for="chatPhone">Your phone number</label><input class="input" id="chatPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(sh.phone)}" placeholder="(555) 123-4567"><p class="small muted">Only your mutual friends can see it, and only to text or call you. You can remove it anytime on the Friends tab.</p></div>`}`:""}
+    </div>`:""}
     <p class="small muted">Friends see the photo, occasion and caption. Your score stays private. Friends can only react with hearts.</p>
     <button class="btn primary block" data-act="postShare" ${sh.posting?"disabled":""}>${sh.posting?"Posting…":"Post to friends"}</button>
   </div>`;
@@ -543,7 +570,7 @@ async function openShare(){
   const { data, error } = await sb.storage.from("fits").download(x.image_path);
   if(error){ toast("Couldn't load this photo."); return; }
   const img=await loadImage(URL.createObjectURL(data));
-  S.share={img, blur:{on:false,x:.5,y:.2,r:.1}, caption:x.detail||"", plugs:{}, posting:false};
+  S.share={img, blur:{on:false,x:.5,y:.2,r:.1}, caption:x.detail||"", plugs:{}, posting:false, chat:false, chatTopic:x.detail||OCC_TOPIC[x.category]||"", phone:""};
   S.view="share"; render(); scrollTo(0,0);
 }
 function drawShare(){
@@ -561,8 +588,15 @@ async function postShare(){
   const plugs=[];
   for(const [i,p] of Object.entries(sh.plugs)){ const it=x.items[i]; if(!it) continue;
     plugs.push({label:it.label, brand:String(p.brand||"").trim().slice(0,40), review:String(p.review||"").trim().slice(0,160), _crop:plugCrop(it)}); }
+  const topic=String(sh.chatTopic||"").trim().slice(0,60);
+  if(sh.chat){
+    if(!topic){ toast("Add what you'd love to chat about."); return; }
+    if(!S.myPhone && !cleanPhone(sh.phone)){ toast("Add a phone number so friends can reach you."); return; }
+  }
   sh.posting=true; render();
   try {
+    if(sh.chat && !S.myPhone){ const phone=cleanPhone(sh.phone);
+      const { error } = await sb.from("contacts").upsert({user_id:S.uid, phone, updated_at:new Date().toISOString()}); if(error) throw error; S.myPhone=phone; }
     drawShare(); const blob=await toBlob($("#shareCanvas"),"image/jpeg",.85);
     const id=crypto.randomUUID(), path=`${S.uid}/${id}.jpg`;
     const u=await sb.storage.from("posts").upload(path,blob,{contentType:"image/jpeg"}); if(u.error) throw u.error;
@@ -574,10 +608,11 @@ async function postShare(){
         g.img=ip; S.urls["posts:"+ip]=url("fits",crop);
       } catch(e){ console.error("plug photo",e); }
     }));
-    const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:"", caption:sh.caption.trim().slice(0,140), plugs, badges:(x.analysis&&x.analysis.badges)||[], image_path:path});
+    const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:"", caption:sh.caption.trim().slice(0,140), plugs, badges:(x.analysis&&x.analysis.badges)||[], image_path:path,
+      ...(sh.chat?{chat_topic:topic, chat_until:new Date(Date.now()+CHAT_HOURS*3600e3).toISOString()}:{})});
     if(error) throw error;
     S.urls["posts:"+path]=URL.createObjectURL(blob);
-    S.share=null; S.view="feed"; await loadSocial(); render(); scrollTo(0,0); toast(S.savedMsg ? S.savedMsg.replace(/^Saved/,"Posted") : "Posted to friends"); S.savedMsg=null;
+    S.share=null; S.view="feed"; await loadSocial(); render(); scrollTo(0,0); toast(sh.chat ? `Posted · friends can reach you until ${untilTime(Date.now()+CHAT_HOURS*3600e3)} tomorrow 💬` : S.savedMsg ? S.savedMsg.replace(/^Saved/,"Posted") : "Posted to friends"); S.savedMsg=null;
   } catch(e){ console.error(e); sh.posting=false; render(); toast("Couldn't post. Try again."); }
 }
 
@@ -591,13 +626,28 @@ function viewFeed(){
     out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head"><span class="avatar" style="background:${avatarColor(p.user_id)}">${esc(name.slice(0,1).toUpperCase())}</span>
       <div style="min-width:0"><b>${esc(name)}</b><div class="small muted">${CAT_EMOJI[p.category]||""} ${esc(p.category)}${p.detail?" · "+esc(p.detail):""} · ${esc(ago(p.created_at))}</div></div></div>
       <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
-      <div class="body">${p.caption?`<p>${esc(p.caption)}</p>`:""}
+      <div class="body">${chatCard(p)}${p.caption?`<p>${esc(p.caption)}</p>`:""}
       ${badgeChips(p.badges)}
       ${(p.plugs||[]).map(g=>{ const shop=safeUrl(g.link)||google([g.brand,g.label].filter(Boolean).join(" ")); const pimg=g.img&&url("posts",g.img); return `<div class="plugcard ${pimg?"hasimg":""}">${pimg?`<img src="${esc(pimg)}" alt="${esc(g.label)}" loading="lazy">`:""}<div class="pctext"><b class="small">${esc(g.label)}${g.brand?` <span class="muted">· ${esc(g.brand)}</span>`:""}</b>${g.review?`<span class="small">${esc(g.review)}</span>`:""}<a href="${esc(shop)}" target="_blank" rel="noopener noreferrer">Shop it</a></div></div>`; }).join("")}
       <div class="row"><button class="heart ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}">${h.mine?ICON.heartFill:ICON.heart}${h.count||""}</button><span class="spacer"></span>
       ${p.user_id===S.uid?`<button class="link small" data-act="removePost" data-id="${esc(p.id)}">Remove post</button>`:""}</div></div></article>`;
   }
   return out+"</div>";
+}
+function chatCard(p){
+  if(!chatOpen(p)) return "";
+  if(p.user_id===S.uid) return `<div class="chatcard mine"><div class="chatline"><span class="chatic">💬</span><span>You'd love to chat about <b>${esc(p.chat_topic)}</b></span></div>
+    <div class="row"><span class="small muted">Friends can text or call you until ${esc(untilTime(p.chat_until))}</span><span class="spacer"></span><button class="link small" data-act="endChat" data-id="${esc(p.id)}">End now</button></div></div>`;
+  const l=chatLinks(p); if(!l) return "";
+  return `<div class="chatcard"><div class="chatline"><span class="chatic">💬</span><span>I'd love to chat about <b>${esc(p.chat_topic)}</b></span></div>
+    <div class="row"><a class="btn sm primary" href="${esc(l.text)}">Text ${esc(firstName(p.user_id))}</a><a class="btn sm" href="${esc(l.call)}">Call</a><span class="spacer"></span><span class="small muted">until ${esc(untilTime(p.chat_until))}</span></div></div>`;
+}
+async function endChat(id){
+  const p=S.posts.find(x=>x.id===id); if(!p) return; const prev=p.chat_until;
+  p.chat_until=new Date().toISOString(); render();
+  const { error } = await sb.from("posts").update({chat_until:p.chat_until}).eq("id",id);
+  if(error){ p.chat_until=prev; render(); toast("Couldn't end the chat invitation."); return; }
+  toast("Chat invitation ended");
 }
 async function toggleHeart(id){
   const h=S.hearts[id]||(S.hearts[id]={count:0,mine:false}); const was=h.mine;
@@ -643,6 +693,10 @@ function viewFriends(){
       ${p?`<div class="row"><span class="code">${esc(p.friend_code)}</span><span class="spacer"></span><button class="btn sm" data-act="copyCode">Copy</button></div>`:`<p class="small muted">Loading…</p>`}
       <div class="field"><label for="handleIn">Name friends see</label><div class="row" style="flex-wrap:nowrap"><input class="input" id="handleIn" maxlength="30" value="${esc(S.handleIn ?? (p&&p.handle) ?? "")}" placeholder="e.g. Dana"><button class="btn sm" data-act="saveHandle">Save</button></div></div>
     </div>
+    ${S.chatReady?`<div class="panel"><h3>Your number</h3>
+      <p class="small muted">Used only when you invite friends to chat about a fit. Only mutual friends can see it.</p>
+      <div class="row" style="flex-wrap:nowrap"><input class="input" id="phoneIn" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(S.phoneIn ?? S.myPhone)}" placeholder="(555) 123-4567"><button class="btn sm" data-act="savePhone">Save</button></div>
+      ${S.myPhone?`<button class="link small" data-act="removePhone">Remove my number</button>`:""}</div>`:""}
     <div class="panel"><h3>Add a friend</h3>
       <div class="row" style="flex-wrap:nowrap"><input class="input" id="codeIn" maxlength="8" value="${esc(S.codeIn)}" placeholder="Their code" autocapitalize="characters" style="text-transform:uppercase"><button class="btn sm primary" data-act="addFriend">Add</button></div>
       ${S.friendMsg?`<p class="small">${esc(S.friendMsg)}</p>`:""}
@@ -1096,6 +1150,12 @@ const ACT = {
     sb.storage.from("fits").remove([x.image_path,x.thumb_path,x.orig_path].filter(Boolean));
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
+  endChat:t=>endChat(t.dataset.id),
+  savePhone:async()=>{ const phone=cleanPhone(S.phoneIn ?? S.myPhone); if(!phone){ toast("That doesn't look like a phone number."); return; }
+    const { error } = await sb.from("contacts").upsert({user_id:S.uid, phone, updated_at:new Date().toISOString()});
+    if(error){ toast("Couldn't save your number."); return; } S.myPhone=phone; S.phoneIn=null; render(); toast("Number saved"); },
+  removePhone:async()=>{ const { error } = await sb.from("contacts").delete().eq("user_id",S.uid);
+    if(error){ toast("Couldn't remove your number."); return; } S.myPhone=""; S.phoneIn=null; render(); toast("Number removed. Chat invitations are off until you add it again."); },
   removePost:async t=>{ const p=S.posts.find(z=>z.id===t.dataset.id); const { error } = await sb.from("posts").delete().eq("id",t.dataset.id);
     if(error){ toast("Couldn't remove the post."); return; } if(p) sb.storage.from("posts").remove([p.image_path, ...(p.plugs||[]).map(g=>g.img).filter(Boolean)]);
     S.posts=S.posts.filter(z=>z.id!==t.dataset.id); render(); toast("Post removed"); },
@@ -1152,6 +1212,9 @@ document.addEventListener("input", e=>{
   else if(t.id==="detail"&&S.flow) S.flow.detail=t.value;
   else if(t.dataset.itemI!=null){ curFit().items[t.dataset.itemI].label=t.value; $("#saveItemsBtn").hidden=false; }
   else if(t.id==="caption"&&S.share) S.share.caption=t.value;
+  else if(t.id==="chatTopic"&&S.share) S.share.chatTopic=t.value;
+  else if(t.id==="chatPhone"&&S.share) S.share.phone=t.value;
+  else if(t.id==="phoneIn") S.phoneIn=t.value;
   else if(t.dataset.plugI!=null&&S.share){ S.share.plugs[t.dataset.plugI][t.dataset.field]=t.value;
     if(t.dataset.field==="brand"){ const it=curFit()?.items?.[t.dataset.plugI]; const hint=t.parentElement?.querySelector("p.small"); if(hint&&it) hint.textContent=`Friends get a Shop it button that searches for ${[t.value.trim(),it.label].filter(Boolean).join(" ")}.`; } }
   else if(t.id==="blurSize"&&S.share){ S.share.blur.r=Number(t.value)/100; drawShare(); }
@@ -1167,6 +1230,7 @@ document.addEventListener("change", e=>{
   else if(t.id==="keepBg"&&S.flow){ S.flow.keepBg=t.checked; render(); }
   else if(t.id==="buyRecs") setBuyRecs(t.checked);
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
+  else if(t.id==="chatOn"&&S.share){ S.share.chat=t.checked; render(); if(t.checked) setTimeout(()=>$("#chatTopic")?.focus(),0); }
   else if(t.id==="blurOn"&&S.share){ S.share.blur.on=t.checked; render(); }
   else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn; if(t.checked) S.share.plugs[i]={brand:(curFit()?.items?.[i]?.brand)||"",review:""}; else delete S.share.plugs[i]; render(); }
 });
