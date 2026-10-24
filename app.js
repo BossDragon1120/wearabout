@@ -733,6 +733,9 @@ async function makeCrops(fit, photoBlob){
     .map(it=>({it, piece:S.closet.find(c=>c.id===it.item_id)})).filter(x=>x.piece && !x.piece.crop_path);
   if(!todo.length) return;
   const img=await blobImage(photoBlob), W=img.naturalWidth, H=img.naturalHeight;
+  // Cut all the close-ups first (quick), then upload them side by side, refreshing the screen as each one lands,
+  // so a share screen opened right after saving fills in its close-ups as they arrive.
+  const jobs=[];
   for(const {it,piece} of todo){
     const [l,t,r,b]=it.box, pad=.06;
     const x0=Math.max(0,(l-pad*(r-l))*W), y0=Math.max(0,(t-pad*(b-t))*H), x1=Math.min(W,(r+pad*(r-l))*W), y1=Math.min(H,(b+pad*(b-t))*H);
@@ -741,14 +744,18 @@ async function makeCrops(fit, photoBlob){
     const side=Math.max(cw,ch), sx=Math.max(0,Math.min(W-side,x0+cw/2-side/2)), sy=Math.max(0,Math.min(H-side,y0+ch/2-side/2)), s2=Math.min(side,W,H);
     const c=document.createElement("canvas"); c.width=c.height=320;
     const ctx=c.getContext("2d"); ctx.fillStyle="#F2F1EE"; ctx.fillRect(0,0,320,320); ctx.drawImage(img,sx,sy,s2,s2,0,0,320,320);
-    const swatch=dominantColor(img,x0,y0,cw,ch);
-    const blob=await toBlob(c,"image/jpeg",.85), path=`${S.uid}/items/${piece.id}.jpg`;
-    const up=await sb.storage.from("fits").upload(path,blob,{contentType:"image/jpeg",upsert:true}); if(up.error){ console.error(up.error); continue; }
-    const { error } = await sb.from("closet_items").update({crop_path:path, swatch}).eq("id",piece.id);
-    if(error){ console.error(error); if(/crop_path|swatch/.test(error.message||"")) return; continue; }
-    piece.crop_path=path; piece.swatch=swatch; S.urls["fits:"+path]=URL.createObjectURL(blob);
+    jobs.push({piece, swatch:dominantColor(img,x0,y0,cw,ch), blob:await toBlob(c,"image/jpeg",.85)});
   }
-  softRender(["closet","item"]);
+  let schemaMissing=false;
+  await Promise.all(jobs.map(async ({piece,swatch,blob})=>{
+    const path=`${S.uid}/items/${piece.id}.jpg`;
+    const up=await sb.storage.from("fits").upload(path,blob,{contentType:"image/jpeg",upsert:true}); if(up.error){ console.error(up.error); return; }
+    if(schemaMissing) return;
+    const { error } = await sb.from("closet_items").update({crop_path:path, swatch}).eq("id",piece.id);
+    if(error){ console.error(error); if(/crop_path|swatch/.test(error.message||"")) schemaMissing=true; return; }
+    piece.crop_path=path; piece.swatch=swatch; S.urls["fits:"+path]=URL.createObjectURL(blob);
+    softRender(["closet","item","share"]);
+  }));
 }
 // Most common color in the middle of the piece, ignoring the edges where background creeps in.
 function dominantColor(img,x,y,w,h){
