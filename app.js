@@ -531,14 +531,15 @@ function plugCrop(it){
 const CHAT_HOURS=24;
 // A ready-made, natural line to invite a chat, so there's nothing to type. Picked from the caption when
 // it mentions something specific, otherwise from the occasion. You can tap another or write your own.
-const OCC_LINE={"Casual/Hangout":"Let's catch up!","Errands":"Running around today, keep me company","Office":"Coffee break? Let's chat","WFH":"Working from home, come say hi","Active/Workout":"Ask me about my workout","Night Out":"Out tonight, let's catch up","Work Event":"Ask me how the event's going","Get Fancy":"All dressed up, say hi!","Travel Day":"On the move, keep me company","Festival":"At the festival, ask me who I'm seeing","Beach/Resort":"Beach day! Let's catch up"};
-const CAPTION_LINES=[[/\b(happy hour|wine|cocktail|drinks)\b/,"Happy hour! Let's talk wine 🍷"],[/\b(concert|show|band|gig|festival|tour)\b/,"Ask me about the show 🎶"],[/\b(game|match|stadium|giants|warriors|niners|49ers)\b/,"Ask me about the game"],[/\b(brunch)\b/,"Brunch! Let's catch up"],[/\b(wedding)\b/,"Wedding day, say hi!"],[/\b(birthday|bday)\b/,"Birthday plans, say hi!"],[/\b(dinner)\b/,"Dinner plans, let's catch up"],[/\b(date night|date)\b/,"Date night, ask me how it goes"],[/\b(interview)\b/,"Big interview, wish me luck!"],[/\b(trip|flight|vacation|travel)\b/,"Ask me about my trip"],[/\b(fleet week|parade|airshow|air show)\b/,"Ask me about the air show ✈️"]];
+// Lines turn the invitation outward: a quick note on what you're up to, then a question about them.
+const OCC_LINE={"Casual/Hangout":"How's your week going? Tell me!","Errands":"Running around today. What are you up to?","Office":"Coffee break? Tell me about your day","WFH":"Working from home. How's your day going?","Active/Workout":"Just worked out! What's keeping you moving?","Night Out":"Out tonight! What are you up to?","Work Event":"At an event. How's your week been?","Get Fancy":"All dressed up! What's new with you?","Travel Day":"On the move. Where are you these days?","Festival":"At the festival! What are you listening to lately?","Beach/Resort":"Beach day! What's your next adventure?"};
+const CAPTION_LINES=[[/\b(happy hour|wine|cocktails?|drinks)\b/,"Happy hour! What are you sipping on? 🍷"],[/\b(concert|show|band|gig|festival|tour)\b/,"At a show! What are you listening to? 🎶"],[/\b(game|match|stadium|giants|warriors|niners|49ers)\b/,"At the game! Who are you rooting for?"],[/\b(brunch)\b/,"Brunch! What's new with you?"],[/\b(wedding)\b/,"Wedding day! Tell me your news"],[/\b(birthday|bday)\b/,"Birthday plans! What's new with you?"],[/\b(dinner)\b/,"Dinner out! Any good spots lately?"],[/\b(date night|date)\b/,"Date night! What's new with you?"],[/\b(interview)\b/,"Big interview today! How's work for you?"],[/\b(trip|flight|vacation|travel)\b/,"Traveling! Where should I go next?"],[/\b(fleet week|parade|airshow|air show)\b/,"Fleet Week! Are you out watching too? ✈️"]];
 function chatLines(x){
   const cap=normLabel(x.detail||""), out=[];
   const hit=CAPTION_LINES.find(([re])=>re.test(cap)); if(hit) out.push(hit[1]);
-  out.push(OCC_LINE[x.category]||"Let's catch up!");
-  if(x.detail && x.detail.length<=36) out.push(`Let's talk about ${x.detail}`);
-  out.push("Let's catch up!");
+  out.push(OCC_LINE[x.category]||"Let's catch up! What's new with you?");
+  if(x.detail && x.detail.length<=36) out.push(`${x.detail.replace(/[.!?]+$/,"")}! What are you up to?`);
+  out.push("Let's catch up! What's new with you?");
   return [...new Set(out)].slice(0,4);
 }
 const chatOpen = p => !!(p && p.chat_topic && p.chat_until && new Date(p.chat_until) > new Date());
