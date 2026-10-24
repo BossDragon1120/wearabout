@@ -527,17 +527,27 @@ function plugCrop(it){
   if(!piece || !piece.crop_path || !url("fits",piece.crop_path)) return null;
   return piece.crop_path;
 }
-/* --- "I'd love to chat about…" --- */
+/* --- chat invitations on posts --- */
 const CHAT_HOURS=24;
-const OCC_TOPIC={"Casual/Hangout":"my hangout","Errands":"my errands day","Office":"my day at the office","WFH":"my work-from-home day","Active/Workout":"my workout","Night Out":"my night out","Work Event":"my work event","Get Fancy":"my big night","Travel Day":"my trip","Festival":"the festival","Beach/Resort":"my beach day"};
+// A ready-made, natural line to invite a chat, so there's nothing to type. Picked from the caption when
+// it mentions something specific, otherwise from the occasion. You can tap another or write your own.
+const OCC_LINE={"Casual/Hangout":"Let's catch up!","Errands":"Running around today, keep me company","Office":"Coffee break? Let's chat","WFH":"Working from home, come say hi","Active/Workout":"Ask me about my workout","Night Out":"Out tonight, let's catch up","Work Event":"Ask me how the event's going","Get Fancy":"All dressed up, say hi!","Travel Day":"On the move, keep me company","Festival":"At the festival, ask me who I'm seeing","Beach/Resort":"Beach day! Let's catch up"};
+const CAPTION_LINES=[[/\b(happy hour|wine|cocktail|drinks)\b/,"Happy hour! Let's talk wine 🍷"],[/\b(concert|show|band|gig|festival|tour)\b/,"Ask me about the show 🎶"],[/\b(game|match|stadium|giants|warriors|niners|49ers)\b/,"Ask me about the game"],[/\b(brunch)\b/,"Brunch! Let's catch up"],[/\b(wedding)\b/,"Wedding day, say hi!"],[/\b(birthday|bday)\b/,"Birthday plans, say hi!"],[/\b(dinner)\b/,"Dinner plans, let's catch up"],[/\b(date night|date)\b/,"Date night, ask me how it goes"],[/\b(interview)\b/,"Big interview, wish me luck!"],[/\b(trip|flight|vacation|travel)\b/,"Ask me about my trip"],[/\b(fleet week|parade|airshow|air show)\b/,"Ask me about the air show ✈️"]];
+function chatLines(x){
+  const cap=normLabel(x.detail||""), out=[];
+  const hit=CAPTION_LINES.find(([re])=>re.test(cap)); if(hit) out.push(hit[1]);
+  out.push(OCC_LINE[x.category]||"Let's catch up!");
+  if(x.detail && x.detail.length<=36) out.push(`Let's talk about ${x.detail}`);
+  out.push("Let's catch up!");
+  return [...new Set(out)].slice(0,4);
+}
 const chatOpen = p => !!(p && p.chat_topic && p.chat_until && new Date(p.chat_until) > new Date());
 const cleanPhone = v => { const t=String(v||"").trim(), d=t.replace(/\D/g,""); return d.length>=7&&d.length<=15 ? (t.startsWith("+")?"+":"")+d : ""; };
 const firstName = id => displayName(id).split(/\s+/)[0];
 // The topic as the friend would say it back: "my night out" becomes "your night out".
-const yourTopic = t => t.replace(/^my\b/i,"your");
 function chatLinks(p){
   const phone=S.phones&&S.phones[p.user_id]; if(!phone) return null;
-  const msg=`Hi ${firstName(p.user_id)}! Loved your ${p.category==="Casual/Hangout"?"":p.category+" "}fit ${CAT_EMOJI[p.category]||"💛"} Tell me all about ${yourTopic(p.chat_topic)}!`;
+  const msg=`Hi ${firstName(p.user_id)}! Loved your ${p.category==="Casual/Hangout"?"":p.category+" "}fit ${CAT_EMOJI[p.category]||"💛"} How's it going?`;
   const sep=/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)?"&":"?";
   return { text:`sms:${phone}${sep}body=${encodeURIComponent(msg)}`, call:`tel:${phone}` };
 }
@@ -556,9 +566,10 @@ function viewShare(){
         <p class="small muted">Friends get a Shop it button that searches for ${esc([p.brand, it.label].filter(Boolean).join(" "))}.${plugCrop(it)?" They'll see this close-up too.":""}</p>`:""}</div>`; }).join(""):`<p class="small muted">No items were listed for this fit.</p>`}
     </div>
     ${S.chatReady?`<div class="chatpanel ${sh.chat?"on":""}">
-      <label class="switchrow" for="chatOn"><span><b>💬 I'd love to chat</b><span class="small muted">Invite friends to text or call you about this, for the next ${CHAT_HOURS} hours.</span></span>
+      <label class="switchrow" for="chatOn"><span><b>💬 Up for a chat?</b><span class="small muted">Friends can text or call you for the next ${CHAT_HOURS} hours.</span></span>
         <input type="checkbox" id="chatOn" class="switch" role="switch" ${sh.chat?"checked":""}></label>
-      ${sh.chat?`<div class="field"><label for="chatTopic">I'd love to chat about…</label><input class="input" id="chatTopic" maxlength="60" value="${esc(sh.chatTopic)}" placeholder="Fleet Week, the concert, my trip"></div>
+      ${sh.chat?`<div class="chips">${chatLines(x).map(l=>`<button class="chip ${l===sh.chatTopic?"on":""}" data-act="chatLine" data-line="${esc(l)}">${esc(l)}</button>`).join("")}</div>
+        <div class="field"><label for="chatTopic" class="small">Or write your own</label><input class="input" id="chatTopic" maxlength="60" value="${esc(sh.chatTopic)}"></div>
         ${S.myPhone?`<p class="small muted">Friends will reach you at ${esc(S.myPhone)}. <button class="link small" data-act="nav" data-view="friends">Change</button></p>`
         :`<div class="field"><label for="chatPhone">Your phone number</label><input class="input" id="chatPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(sh.phone)}" placeholder="(555) 123-4567"><p class="small muted">Only your mutual friends can see it, and only to text or call you. You can remove it anytime on the Friends tab.</p></div>`}`:""}
     </div>`:""}
@@ -571,7 +582,7 @@ async function openShare(){
   const { data, error } = await sb.storage.from("fits").download(x.image_path);
   if(error){ toast("Couldn't load this photo."); return; }
   const img=await loadImage(URL.createObjectURL(data));
-  S.share={img, caption:x.detail||"", plugs:{}, posting:false, chat:false, chatTopic:x.detail||OCC_TOPIC[x.category]||"", phone:""};
+  S.share={img, caption:x.detail||"", plugs:{}, posting:false, chat:false, chatTopic:chatLines(x)[0], phone:""};
   S.view="share"; render(); scrollTo(0,0);
   if(!S.chatReady){ const ph=await sb.from("contacts").select("phone").eq("user_id",S.uid).maybeSingle();
     if(!ph.error){ S.chatReady=true; S.myPhone=(ph.data&&ph.data.phone)||""; softRender(["share"]); } }
@@ -587,7 +598,7 @@ async function postShare(){
     plugs.push({label:it.label, brand:String(p.brand||"").trim().slice(0,40), review:String(p.review||"").trim().slice(0,160), _crop:plugCrop(it)}); }
   const topic=String(sh.chatTopic||"").trim().slice(0,60);
   if(sh.chat){
-    if(!topic){ toast("Add what you'd love to chat about."); return; }
+    if(!topic){ toast("Add a line so friends know what to chat about."); return; }
     if(!S.myPhone && !cleanPhone(sh.phone)){ toast("Add a phone number so friends can reach you."); return; }
   }
   sh.posting=true; render();
@@ -644,10 +655,10 @@ function lovesRow(p){
 }
 function chatCard(p){
   if(!chatOpen(p)) return "";
-  if(p.user_id===S.uid) return `<div class="chatcard mine"><div class="chatline"><span class="chatic">💬</span><span>Open to chat about <b>${esc(p.chat_topic)}</b></span></div>
+  if(p.user_id===S.uid) return `<div class="chatcard mine"><div class="chatline"><span class="chatic">💬</span><span>${esc(p.chat_topic)}</span></div>
     <div class="row"><span class="small muted">Until ${esc(untilTime(p.chat_until))}</span><span class="spacer"></span><button class="link small" data-act="endChat" data-id="${esc(p.id)}">End now</button></div></div>`;
   const l=chatLinks(p); if(!l) return "";
-  return `<div class="chatcard"><div class="chatline"><span class="chatic">💬</span><span>I'd love to chat about <b>${esc(p.chat_topic)}</b></span></div>
+  return `<div class="chatcard"><div class="chatline"><span class="chatic">💬</span><span>${esc(p.chat_topic)}</span></div>
     <div class="row"><a class="btn sm primary" href="${esc(l.text)}">Text</a><a class="btn sm" href="${esc(l.call)}">Call</a><span class="spacer"></span><span class="small muted">until ${esc(untilTime(p.chat_until))}</span></div></div>`;
 }
 async function endChat(id){
@@ -1156,6 +1167,7 @@ const ACT = {
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
   hookMore:t=>t.classList.toggle("open"),
+  chatLine:t=>{ if(S.share){ S.share.chatTopic=t.dataset.line; render(); } },
   endChat:t=>endChat(t.dataset.id),
   savePhone:async()=>{ const phone=cleanPhone(S.phoneIn ?? S.myPhone); if(!phone){ toast("That doesn't look like a phone number."); return; }
     const { error } = await sb.from("contacts").upsert({user_id:S.uid, phone, updated_at:new Date().toISOString()});
@@ -1236,7 +1248,7 @@ document.addEventListener("change", e=>{
   else if(t.id==="keepBg"&&S.flow){ S.flow.keepBg=t.checked; render(); }
   else if(t.id==="buyRecs") setBuyRecs(t.checked);
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
-  else if(t.id==="chatOn"&&S.share){ S.share.chat=t.checked; render(); if(t.checked) setTimeout(()=>$("#chatTopic")?.focus(),0); }
+  else if(t.id==="chatOn"&&S.share){ S.share.chat=t.checked; render(); }
   else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn; if(t.checked) S.share.plugs[i]={brand:(curFit()?.items?.[i]?.brand)||"",review:""}; else delete S.share.plugs[i]; render(); }
 });
 
