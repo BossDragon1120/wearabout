@@ -724,9 +724,17 @@ async function backfillCloset(){
   for(let i=0;i<changed.length;i+=8) await Promise.all(changed.slice(i,i+8).map(f=>sb.from("fits").update({items:f.items}).eq("id",f.id)));
 }
 const isHex = v => /^#[0-9a-f]{6}$/i.test(String(v||""));
+// A swatch is one color ("#aabbcc") or, for patterns and mixes, two or three ("#aabbcc,#112233").
+const swatchList = v => String(v||"").split(",").filter(isHex).slice(0,3);
+const isSwatch = v => swatchList(v).length>0 && swatchList(v).length===String(v).split(",").length;
+const isMulti = v => isSwatch(v) && swatchList(v).length>1;
+function swatchCss(v){ const l=swatchList(v); if(l.length<2) return l[0]||"transparent";
+  const step=360/l.length; return `conic-gradient(${l.map((h,i)=>`${h} ${i*step}deg ${(i+1)*step}deg`).join(",")})`; }
+const PATTERN_WORDS=/\b(stripe[sd]?|striped|floral|plaid|check(ed)?|checkered|gingham|houndstooth|print(ed)?|leopard|zebra|snake|animal|paisley|polka|dot(s|ted)?|multi(colou?r(ed)?)?|tie-?dye|camo(uflage)?|argyle|fair ?isle|color-?block(ed)?|patchwork|tartan|ombre)\b/;
+const isPatterned = label => PATTERN_WORDS.test(normLabel(label));
 function pieceThumb(c,e){
   const crop=c.crop_path&&url("fits",c.crop_path);
-  return `<span class="pthumb ${crop?"crop":""}"><img src="${esc(crop||url("fits",e.thumb))}" alt="" loading="lazy">${isHex(c.swatch)?`<span class="swatch" style="background:${c.swatch}"></span>`:""}</span>`;
+  return `<span class="pthumb ${crop?"crop":""}"><img src="${esc(crop||url("fits",e.thumb))}" alt="" loading="lazy">${isSwatch(c.swatch)?`<span class="swatch" style="background:${swatchCss(c.swatch)}"></span>`:""}</span>`;
 }
 // Cut a close-up of each clearly visible piece from the real photo, and measure its main color from the pixels.
 async function makeCrops(fit, photoBlob){
@@ -746,7 +754,7 @@ async function makeCrops(fit, photoBlob){
     const side=Math.max(cw,ch), sx=Math.max(0,Math.min(W-side,x0+cw/2-side/2)), sy=Math.max(0,Math.min(H-side,y0+ch/2-side/2)), s2=Math.min(side,W,H);
     const c=document.createElement("canvas"); c.width=c.height=320;
     const ctx=c.getContext("2d"); ctx.fillStyle="#F2F1EE"; ctx.fillRect(0,0,320,320); ctx.drawImage(img,sx,sy,s2,s2,0,0,320,320);
-    jobs.push({piece, swatch:dominantColor(img,x0,y0,cw,ch,pieceHex(it)), blob:await toBlob(c,"image/jpeg",.85)});
+    jobs.push({piece, swatch:isPatterned(it.label)?multiColor(img,x0,y0,cw,ch):dominantColor(img,x0,y0,cw,ch,pieceHex(it)), blob:await toBlob(c,"image/jpeg",.85)});
   }
   let schemaMissing=false;
   await Promise.all(jobs.map(async ({piece,swatch,blob})=>{
@@ -780,6 +788,11 @@ const hexRgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 const colorDist=(a,b)=>{ const [x,y]=[hexRgb(a),hexRgb(b)]; return Math.hypot(x[0]-y[0],x[1]-y[1],x[2]-y[2]); };
 // The piece's main color, measured from the middle of its box. When the name says a color ("white shirt"),
 // pick the measured color closest to it, so a white shirt under a black blazer gets a white dot, not black.
+// Patterns and mixes: the two or three main colors of the piece.
+function multiColor(img,x,y,w,h){
+  const cols=colorsIn(img,x+w*.2,y+h*.2,w*.6,h*.6,.08).slice(0,3).map(c=>c.hex);
+  return cols.length>1 ? cols.join(",") : cols[0]||null;
+}
 function dominantColor(img,x,y,w,h,hint){
   const cols=colorsIn(img,x+w*.25,y+h*.25,w*.5,h*.5); if(!cols.length) return null;
   if(hint){ const best=cols.reduce((m,c)=>!m||colorDist(c.hex,hint)<colorDist(m.hex,hint)?c:m,null); if(colorDist(best.hex,hint)<170) return best.hex; }
@@ -843,8 +856,9 @@ function smartKey(c){
   const kinds=KINDS[c.type]||[];
   let kind=kinds.findIndex(words=>words.some(w=>name.includes(w))); if(kind<0) kind=kinds.length;
   const word=COLOR_KEYS.find(w=>new RegExp(`\\b${w}\\b`).test(name));
-  const hex = word ? COLOR_WORDS[word] : isHex(c.swatch) ? c.swatch : null;
-  return [kind, ...(hex?colorRank(hex):[2,0,0])];
+  if(isPatterned(c.label) || (!word && isMulti(c.swatch))) return [kind, 2, 0, 0];   // patterns after solid colors
+  const hex = word ? COLOR_WORDS[word] : swatchList(c.swatch)[0] || null;
+  return [kind, ...(hex?colorRank(hex):[3,0,0])];
 }
 function cmpKeys(a,b){ for(let i=0;i<a.length;i++){ if(a[i]!==b[i]) return a[i]<b[i]?-1:1; } return 0; }
 
@@ -854,8 +868,10 @@ function swatchChoices(c){
   const fromPhoto=(S.palettes&&S.palettes[c.id])||[];
   if(c.crop_path && !(S.palettes&&c.id in S.palettes)) loadPalette(c);
   // Remember the dot it had when you opened the piece, so changing it never loses the original option.
-  const seen=(S.swatchSeen||(S.swatchSeen={})); if(!(c.id in seen)) seen[c.id]=isHex(c.swatch)?c.swatch:null;
-  const list=[...(seen[c.id]?[seen[c.id]]:[]), ...(c.swatch&&isHex(c.swatch)?[c.swatch]:[]), ...fromPhoto, ...(S.moreColors||!fromPhoto.length?COMMON_COLORS:[])];
+  const seen=(S.swatchSeen||(S.swatchSeen={})); if(!(c.id in seen)) seen[c.id]=isSwatch(c.swatch)?c.swatch:null;
+  // A multicolor option made from the close-up's top colors, for patterns and mixes.
+  const multi=fromPhoto.length>1?[fromPhoto.slice(0,3).join(",")]:[];
+  const list=[...(seen[c.id]?[seen[c.id]]:[]), ...(isSwatch(c.swatch)?[c.swatch]:[]), ...multi, ...fromPhoto, ...(S.moreColors||!fromPhoto.length?COMMON_COLORS:[])];
   return list.filter((h,i)=>list.findIndex(x=>x.toLowerCase()===h.toLowerCase())===i).slice(0,30);
 }
 async function loadPalette(c){
@@ -868,7 +884,7 @@ async function loadPalette(c){
   } catch(e){ console.warn("palette",e); }
 }
 async function setSwatch(hex){
-  const c=curItem(); if(!c||!isHex(hex)) return; const prev=c.swatch;
+  const c=curItem(); if(!c||!isSwatch(hex)) return; const prev=c.swatch;
   c.swatch=hex; render();
   const { error } = await sb.from("closet_items").update({swatch:hex}).eq("id",c.id);
   if(error){ c.swatch=prev; render(); toast("Couldn't change the color."); return; }
@@ -881,7 +897,7 @@ function viewItem(){
   const fits=e.fits.map(id=>S.fits.find(f=>f.id===id)).filter(Boolean);
   const others=S.closet.filter(o=>o.id!==c.id && stAll[o.id]).map(o=>[o,likeness(c,o)]).sort((a,b)=>b[1]-a[1]||a[0].label.localeCompare(b[0].label)).map(x=>x[0]);
   return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><div class="stack" style="gap:18px">
-    ${c.crop_path&&url("fits",c.crop_path)?`<div class="crophero"><img src="${esc(url("fits",c.crop_path))}" alt="${esc(c.label)}">${c.swatch?`<span class="swatch lg" style="background:${esc(c.swatch)}" title="Main color"></span>`:""}</div>`:""}
+    ${c.crop_path&&url("fits",c.crop_path)?`<div class="crophero"><img src="${esc(url("fits",c.crop_path))}" alt="${esc(c.label)}">${isSwatch(c.swatch)?`<span class="swatch lg" style="background:${swatchCss(c.swatch)}" title="${isMulti(c.swatch)?"Main colors":"Main color"}"></span>`:""}</div>`:""}
     <div><span class="tag">${esc(TYPE_LABEL[c.type]||"Other")}</span><h2 style="margin-top:4px">${esc(c.label)}</h2>
       <p class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</p></div>
     <div class="grid g3">${fits.map(x=>`<button class="card" data-key="ifit-${esc(x.id)}" data-act="openFit" data-id="${esc(x.id)}" data-from="item"><img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit" loading="lazy"><span class="cbody"><span class="cdate">${esc(longDate(x.created_at))}</span><span class="pills"><span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span></span></span></button>`).join("")}</div>
@@ -889,7 +905,7 @@ function viewItem(){
       <div class="field"><label for="itemLabel">Name</label><input class="input" id="itemLabel" maxlength="80" value="${esc(ed.label ?? c.label)}"></div>
       <div class="field"><label for="itemType">Type</label><select class="input" id="itemType">${ITEM_TYPES.map(t=>`<option value="${t}" ${t===(ed.type??c.type)?"selected":""}>${TYPE_LABEL[t]}</option>`).join("")}</select></div>
       <div class="field"><span class="small" style="font-weight:600">Color</span>
-        <div class="swpick">${swatchChoices(c).map(h=>`<button class="swopt ${c.swatch&&h.toLowerCase()===String(c.swatch).toLowerCase()?"on":""}" data-act="setSwatch" data-hex="${h}" style="background:${h}" aria-label="Use color ${h}"></button>`).join("")}
+        <div class="swpick">${swatchChoices(c).map(h=>`<button class="swopt ${c.swatch&&h.toLowerCase()===String(c.swatch).toLowerCase()?"on":""}" data-act="setSwatch" data-hex="${h}" style="background:${swatchCss(h)}" aria-label="${isMulti(h)?"Use multicolor":"Use color "+h}"></button>`).join("")}
           ${S.moreColors?"":`<button class="link small" data-act="moreColors">More colors</button>`}</div>
         <p class="small muted">${S.palettes&&S.palettes[c.id]&&S.palettes[c.id].length?"First colors are measured from the close-up. ":""}Tap to change the dot.</p></div>
       <button class="btn sm primary" data-act="saveItem">Save</button></div>
@@ -918,7 +934,7 @@ async function saveClosetItem(){
   c.label=label; c.type=type; S.itemEdit=null; render(); toast("Saved");
 }
 // How alike two pieces look on paper: same type counts most, then shared words in the name, then color.
-function pieceHex(c){ const name=" "+normLabel(c.label)+" "; const w=COLOR_KEYS.find(k=>new RegExp(`\\b${k}\\b`).test(name)); return w?COLOR_WORDS[w]:isHex(c.swatch)?c.swatch:null; }
+function pieceHex(c){ const name=" "+normLabel(c.label)+" "; const w=COLOR_KEYS.find(k=>new RegExp(`\\b${k}\\b`).test(name)); return w?COLOR_WORDS[w]:swatchList(c.swatch)[0]||null; }
 const STOP=new Set(["the","and","with","a","an","of","in","top","pair"]);
 const words=c=>new Set(normLabel(c.label).split(/[^a-z0-9]+/).filter(w=>w.length>2&&!STOP.has(w)));
 function likeness(a,b){
