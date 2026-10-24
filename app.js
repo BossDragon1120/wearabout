@@ -461,6 +461,7 @@ function viewShare(){
       <label class="row" style="font-weight:600"><input type="checkbox" id="blurOn" ${sh.blur.on?"checked":""} style="width:18px;height:18px;accent-color:var(--accent)"> Blur my face</label>
       ${sh.blur.on?`<p class="small muted">Tap the photo where your face is.</p><label class="small" for="blurSize">Blur size</label><input type="range" id="blurSize" min="4" max="30" value="${Math.round(sh.blur.r*100)}">`:""}
     </div>
+    <div class="field"><label for="shareDetail">Occasion notes</label><input class="input" id="shareDetail" maxlength="60" value="${esc(sh.detail)}" placeholder="e.g. Fleet Week, dinner date"><p class="small muted">Copied from your fit. Edit it for friends if you like; your saved fit stays as is.</p></div>
     <div class="field"><label for="caption">Caption (optional)</label><input class="input" id="caption" maxlength="140" value="${esc(sh.caption)}" placeholder="Where you're headed, how you feel"></div>
     <div class="stack" style="gap:8px"><h3>Plug something you love</h3>
       ${(x.items||[]).length?x.items.map((it,i)=>{ const p=sh.plugs[i]; return `<div class="plug">
@@ -478,7 +479,7 @@ async function openShare(){
   const { data, error } = await sb.storage.from("fits").download(x.image_path);
   if(error){ toast("Couldn't load this photo."); return; }
   const img=await loadImage(URL.createObjectURL(data));
-  S.share={img, blur:{on:false,x:.5,y:.2,r:.1}, caption:"", plugs:{}, posting:false};
+  S.share={img, blur:{on:false,x:.5,y:.2,r:.1}, detail:x.detail||"", caption:"", plugs:{}, posting:false};
   S.view="share"; render(); scrollTo(0,0);
 }
 function drawShare(){
@@ -501,7 +502,7 @@ async function postShare(){
     drawShare(); const blob=await toBlob($("#shareCanvas"),"image/jpeg",.85);
     const id=crypto.randomUUID(), path=`${S.uid}/${id}.jpg`;
     const u=await sb.storage.from("posts").upload(path,blob,{contentType:"image/jpeg"}); if(u.error) throw u.error;
-    const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:x.detail||"", caption:sh.caption.slice(0,140), plugs, badges:(x.analysis&&x.analysis.badges)||[], image_path:path});
+    const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:String(sh.detail||"").trim().slice(0,60), caption:sh.caption.slice(0,140), plugs, badges:(x.analysis&&x.analysis.badges)||[], image_path:path});
     if(error) throw error;
     S.urls["posts:"+path]=URL.createObjectURL(blob);
     S.share=null; S.view="feed"; await loadSocial(); render(); scrollTo(0,0); toast("Posted to friends");
@@ -898,6 +899,7 @@ document.addEventListener("input", e=>{
   else if(t.id==="detail"&&S.flow) S.flow.detail=t.value;
   else if(t.dataset.itemI!=null){ curFit().items[t.dataset.itemI].label=t.value; $("#saveItemsBtn").hidden=false; }
   else if(t.id==="caption"&&S.share) S.share.caption=t.value;
+  else if(t.id==="shareDetail"&&S.share) S.share.detail=t.value;
   else if(t.dataset.plugI!=null&&S.share){ S.share.plugs[t.dataset.plugI][t.dataset.field]=t.value;
     if(t.dataset.field==="brand"){ const it=curFit()?.items?.[t.dataset.plugI]; const hint=t.parentElement?.querySelector("p.small"); if(hint&&it) hint.textContent=`Friends get a Shop it button that searches for ${[t.value.trim(),it.label].filter(Boolean).join(" ")}.`; } }
   else if(t.id==="blurSize"&&S.share){ S.share.blur.r=Number(t.value)/100; drawShare(); }
