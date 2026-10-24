@@ -776,10 +776,11 @@ function viewCloset(){
     recent:(a,b)=>String(st[b.id].last).localeCompare(String(st[a.id].last)),
     least:(a,b)=>(st[a.id].count-st[b.id].count)||String(st[a.id].last).localeCompare(String(st[b.id].last)),
   };
+  if(S.closetSort==="smart"){ const keys=new Map(live.map(c=>[c.id,smartKey(c)])); sorters.smart=(a,b)=>cmpKeys(keys.get(a.id),keys.get(b.id))||sorters.most(a,b); }
   const sorted=[...live].sort(sorters[S.closetSort]||sorters.most);
   let out=`<div class="stack"><div class="countrow" style="margin-top:0"><span class="count">${live.length}</span><span class="countlbl">Piece${live.length===1?"":"s"} in your closet</span></div>
     <p class="small muted" style="margin-top:-6px">Built from your logged fits. Each new fit adds or matches pieces automatically.</p>
-    <div class="chips" role="toolbar" aria-label="Sort">${[["most","Most worn"],["recent","Recently worn"],["least","Least worn"]].map(([k,l])=>`<button class="chip ${S.closetSort===k?"on":""}" data-act="closetSort" data-sort="${k}" aria-pressed="${S.closetSort===k}">${l}</button>`).join("")}</div>`;
+    <div class="chips" role="toolbar" aria-label="Sort">${[["smart","✨ Smart"],["most","Most worn"],["recent","Recently worn"],["least","Least worn"]].map(([k,l])=>`<button class="chip ${S.closetSort===k?"on":""}" data-act="closetSort" data-sort="${k}" aria-pressed="${S.closetSort===k}">${l}</button>`).join("")}</div>`;
   if(!S.loaded) out+=`<div class="note plain">Loading your closet…</div>`;
   else if(live.length) out+=`<p class="small muted">Swipe a piece left to remove it.</p>`;
   if(S.loaded && !live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;
@@ -790,6 +791,44 @@ function viewCloset(){
   }
   return out+"</div>";
 }
+
+/* --- smart sort: within each type, group by kind of piece, then by color, then most worn --- */
+// Kinds are read from the piece's name, in the order you'd hang them. Anything unrecognized goes last.
+const KINDS = {
+  top:[["tank","cami","camisole","tube"],["tee","t-shirt","tshirt"],["polo"],["bodysuit"],["blouse"],["shirt","button-down","button-up","oxford"],["sweater","knit","pullover","jumper","turtleneck"],["sweatshirt","hoodie","crewneck"]],
+  bottom:[["jean","denim"],["trouser","pant","chino","slacks"],["legging"],["jogger","sweatpant","track"],["short"],["skirt"]],
+  dress:[["mini"],["midi"],["maxi"],["jumpsuit","romper"]],
+  jacket:[["blazer"],["denim","jean"],["leather","moto","biker"],["bomber"],["shacket","overshirt"],["cardigan"]],
+  outerwear:[["trench"],["coat","overcoat"],["puffer","down"],["parka"],["vest","gilet"]],
+  shoes:[["sneaker","trainer"],["loafer","flat","ballet"],["sandal","slide"],["mule","clog"],["boot"],["heel","pump","stiletto"]],
+  bag:[["tote"],["shoulder"],["crossbody"],["clutch"],["backpack"],["belt bag","fanny"]],
+};
+// Color words in names, mapped to a representative color. Longer words are checked first ("light wash" before "wash").
+const COLOR_WORDS = {white:"#fafafa",ivory:"#f6f1e3",cream:"#f1e8d2",ecru:"#ece3cf",oatmeal:"#e3d7c1",beige:"#dccbab",sand:"#d8c39d",khaki:"#c3b091",tan:"#c4a27a",camel:"#b98b52",cognac:"#9a4f22",brown:"#6f4a2f",chocolate:"#4a2c1d",
+  "light gray":"#cfcfcf","light grey":"#cfcfcf",gray:"#8f8f8f",grey:"#8f8f8f",heather:"#a5a5a5",charcoal:"#3f4247",black:"#161616",
+  "light wash":"#a9bcd4","medium wash":"#6b87ad","dark wash":"#2f4060",indigo:"#2e3a6b",denim:"#56739c",navy:"#1e2a4a",
+  red:"#c4302b",burgundy:"#6d1a2b",maroon:"#6a1b24",wine:"#6b1f33",rust:"#a8481f",orange:"#e07a2e",coral:"#f07d6a",terracotta:"#c06a46",
+  mustard:"#d4a52c",yellow:"#f0d24a",gold:"#c9a646",olive:"#6b6b2e",sage:"#9caf88",green:"#3f8a4a",emerald:"#1f7a54",forest:"#24452f",teal:"#2a7f7f",
+  "light blue":"#a8c8e8","sky blue":"#8ec5ea",blue:"#2f5fb3",cobalt:"#1f4fbf",lavender:"#b9a7d6",lilac:"#c8a2c8",purple:"#6b3fa0",plum:"#5e2b4f",
+  blush:"#e8b4b0",pink:"#e88aa8",fuchsia:"#c4307a",magenta:"#c4307a",silver:"#c0c0c4"};
+const COLOR_KEYS = Object.keys(COLOR_WORDS).sort((a,b)=>b.length-a.length);
+function colorRank(hex){
+  // Neutrals first, light to dark; then colors around the wheel (red, orange, yellow, green, blue, purple, pink).
+  const n=parseInt(hex.slice(1),16), r=(n>>16&255)/255, g=(n>>8&255)/255, b=(n&255)/255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), l=(mx+mn)/2, d=mx-mn, sat=d===0?0:d/(1-Math.abs(2*l-1));
+  if(sat<0.15 || d<0.06){ const warm=r>b+0.04; return [0, warm&&l>0.3?0:1, -l]; }   // whites/creams/tans/browns, then grays/black
+  let h = mx===r ? ((g-b)/d)%6 : mx===g ? (b-r)/d+2 : (r-g)/d+4; h=(h*60+360)%360;
+  return [1, (h+15)%360, -l];   // start just before red so reds stay together
+}
+function smartKey(c){
+  const name=" "+normLabel(c.label)+" ";
+  const kinds=KINDS[c.type]||[];
+  let kind=kinds.findIndex(words=>words.some(w=>name.includes(w))); if(kind<0) kind=kinds.length;
+  const word=COLOR_KEYS.find(w=>new RegExp(`\\b${w}\\b`).test(name));
+  const hex = word ? COLOR_WORDS[word] : isHex(c.swatch) ? c.swatch : null;
+  return [kind, ...(hex?colorRank(hex):[2,0,0])];
+}
+function cmpKeys(a,b){ for(let i=0;i<a.length;i++){ if(a[i]!==b[i]) return a[i]<b[i]?-1:1; } return 0; }
 const curItem=()=>S.closet.find(c=>c.id===S.itemId);
 function viewItem(){
   const c=curItem(); if(!c) return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><p class="muted">This piece isn't in your closet anymore.</p>`;
