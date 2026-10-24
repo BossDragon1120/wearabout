@@ -444,9 +444,11 @@ async function saveFit(share=false){
     S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.confirmDel=false;
     if(!share){ S.view="home"; S.filter={cat:null,best:false}; S.justSaved=id; render(); scrollTo(0,0); S.justSaved=null; }
     const n=streakInfo().n, newNote=added?` · ${added} new piece${added===1?"":"s"} in your Closet`:"";
-    toast((n>1?`Saved · ${n}-day streak`:"Saved · streak started")+newNote);
-    if(share){ S.shareBack="home"; await openShare();
-      if(S.view!=="share"){ S.view="home"; render(); } }   // photo didn't load: still land on Fits
+    const savedMsg=(n>1?`Saved · ${n}-day streak`:"Saved · streak started")+newNote;
+    // Sharing: hold the message until you post or back out, so it never sits on top of the share screen.
+    if(!share) toast(savedMsg);
+    else { S.shareBack="home"; S.savedMsg=savedMsg; await openShare();
+      if(S.view!=="share"){ S.view="home"; render(); toast(savedMsg); S.savedMsg=null; } }   // photo didn't load: still land on Fits
   } catch(e){ console.error(e); f.saving=false; render(); toast("Couldn't save. Check your connection and try again."); }
 }
 
@@ -575,7 +577,7 @@ async function postShare(){
     const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:"", caption:sh.caption.trim().slice(0,140), plugs, badges:(x.analysis&&x.analysis.badges)||[], image_path:path});
     if(error) throw error;
     S.urls["posts:"+path]=URL.createObjectURL(blob);
-    S.share=null; S.view="feed"; await loadSocial(); render(); scrollTo(0,0); toast("Posted to friends");
+    S.share=null; S.view="feed"; await loadSocial(); render(); scrollTo(0,0); toast(S.savedMsg ? S.savedMsg.replace(/^Saved/,"Posted") : "Posted to friends"); S.savedMsg=null;
   } catch(e){ console.error(e); sh.posting=false; render(); toast("Couldn't post. Try again."); }
 }
 
@@ -917,7 +919,7 @@ document.addEventListener("touchend",()=>{
 
 /* ---------- actions ---------- */
 const ACT = {
-  nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.confirmDel=false; render(); scrollTo(0,0);
+  nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.savedMsg=null; S.confirmDel=false; render(); scrollTo(0,0);
     if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
   log:()=>{ S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
   changePhoto:()=>{ S.replacing=true; const i=$("#photoIn"); i.value=""; i.click(); },
@@ -953,7 +955,7 @@ const ACT = {
     try { x.items=await linkItems(x.items); } catch(e){ console.error(e); }
     const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); toast(error?"Couldn't save labels.":"Labels saved"); render(); },
   share:()=>{ S.shareBack="fit"; openShare(); },
-  cancelShare:()=>{ S.share=null; S.view=S.shareBack||"fit"; S.shareBack=null; render(); scrollTo(0,0); },
+  cancelShare:()=>{ S.share=null; S.view=S.shareBack||"fit"; S.shareBack=null; render(); scrollTo(0,0); if(S.savedMsg){ toast(S.savedMsg); S.savedMsg=null; } },
   postShare:()=>postShare(),
   deleteFit:()=>{ S.confirmDel=true; render(); },
   cancelDelete:()=>{ S.confirmDel=false; render(); },
