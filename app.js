@@ -646,12 +646,13 @@ function viewFeed(){
   for(const p of S.posts){
     const h=S.hearts[p.id]||{count:0,mine:false}, name=displayName(p.user_id);
     out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head">${avatar(p.user_id)}
-      <div class="headtext"><b>${esc(name)}</b><span class="small muted">${esc(ago(p.created_at))}</span>${p.user_id===S.uid?`<button class="link small muted" data-act="removePost" data-id="${esc(p.id)}">Remove</button>`:""}</div><span class="spacer"></span><span class="cpill">${CAT_EMOJI[p.category]||""} ${esc(p.category)}</span></div>
+      <div class="headtext"><b>${esc(name)}</b><span class="small muted">${esc(ago(p.created_at))}</span></div><span class="spacer"></span><span class="cpill">${CAT_EMOJI[p.category]||""} ${esc(p.category)}</span></div>
       ${p.caption||p.detail?`<p class="hook ${S.hookOpen&&S.hookOpen.has(p.id)?"open":""}" data-act="hookMore" data-id="${esc(p.id)}">${esc(p.caption||p.detail)}</p>`:""}
       <div class="photo-wrap"><img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
         <button class="heart onphoto ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}" aria-label="${h.mine?"Unheart":"Heart"} this fit">${h.mine?ICON.heartFill:ICON.heart}${h.count?`<span>${h.count}</span>`:""}</button></div>
       ${chatOverlay(p)}
       ${(p.plugs||[]).length?`<div class="body">${lovesRow(p)}</div>`:""}
+      ${p.user_id===S.uid?`<div class="postfoot"><button class="link small muted" data-act="removePost" data-id="${esc(p.id)}">Remove post</button></div>`:""}
       </article>`;
   }
   return out+"</div>";
