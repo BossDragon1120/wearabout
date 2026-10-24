@@ -626,13 +626,25 @@ function viewFeed(){
     out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head"><span class="avatar" style="background:${avatarColor(p.user_id)}">${esc(name.slice(0,1).toUpperCase())}</span>
       <div style="min-width:0"><b>${esc(name)}</b><div class="small muted">${CAT_EMOJI[p.category]||""} ${esc(p.category)}${p.detail?" · "+esc(p.detail):""} · ${esc(ago(p.created_at))}</div></div></div>
       <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
-      <div class="body">${chatCard(p)}${p.caption?`<p>${esc(p.caption)}</p>`:""}
-      ${badgeChips(p.badges)}
-      ${(p.plugs||[]).map(g=>{ const shop=safeUrl(g.link)||google([g.brand,g.label].filter(Boolean).join(" ")); const pimg=g.img&&url("posts",g.img); return `<div class="plugcard ${pimg?"hasimg":""}">${pimg?`<img src="${esc(pimg)}" alt="${esc(g.label)}" loading="lazy">`:""}<div class="pctext"><b class="small">${esc(g.label)}${g.brand?` <span class="muted">· ${esc(g.brand)}</span>`:""}</b>${g.review?`<span class="small">${esc(g.review)}</span>`:""}<a href="${esc(shop)}" target="_blank" rel="noopener noreferrer">Shop it</a></div></div>`; }).join("")}
-      <div class="row"><button class="heart ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}">${h.mine?ICON.heartFill:ICON.heart}${h.count||""}</button><span class="spacer"></span>
-      ${p.user_id===S.uid?`<button class="link small" data-act="removePost" data-id="${esc(p.id)}">Remove post</button>`:""}</div></div></article>`;
+      <div class="body">
+      <div class="actrow"><button class="heart ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}" aria-label="${h.mine?"Unheart":"Heart"} this fit">${h.mine?ICON.heartFill:ICON.heart}${h.count||""}</button>
+        ${(p.badges||[]).length?`<span class="minibadges" title="${esc(p.badges.join(", "))}">${p.badges.map(n=>`<span class="mbdg">${badgeIcon(n)} ${esc(n)}</span>`).join("")}</span>`:""}
+        <span class="spacer"></span>${p.user_id===S.uid?`<button class="link small" data-act="removePost" data-id="${esc(p.id)}">Remove</button>`:""}</div>
+      ${p.caption?`<p class="caption"><b>${esc(firstName(p.user_id))}</b> ${esc(p.caption)}</p>`:""}
+      ${chatCard(p)}
+      ${lovesRow(p)}
+      </div></article>`;
   }
   return out+"</div>";
+}
+// Plugs, framed as a friend's genuine pick: their words first, then the piece, then a light Shop link.
+function lovesRow(p){
+  const plugs=p.plugs||[]; if(!plugs.length) return "";
+  const who=p.user_id===S.uid?"Your":`${esc(firstName(p.user_id))}'s`;
+  return `<div class="loves"><span class="loveshead">💛 ${who} ${plugs.length>1?"favorites":"favorite"}</span><div class="lovesrow ${plugs.length>1?"multi":""}">${plugs.map(g=>{
+    const shop=safeUrl(g.link)||google([g.brand,g.label].filter(Boolean).join(" ")), pimg=g.img&&url("posts",g.img);
+    return `<a class="love" href="${esc(shop)}" target="_blank" rel="noopener noreferrer">${pimg?`<img src="${esc(pimg)}" alt="" loading="lazy">`:`<span class="lovenoimg">💛</span>`}
+      <span class="lovetext">${g.review?`<span class="lovequote">“${esc(g.review)}”</span>`:""}<span class="lovepiece">${g.brand?`<b>${esc(g.brand)}</b> · `:""}${esc(g.label)}</span><span class="loveshop">Shop it ↗</span></span></a>`; }).join("")}</div></div>`;
 }
 function chatCard(p){
   if(!chatOpen(p)) return "";

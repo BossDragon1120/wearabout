@@ -317,3 +317,30 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .chatcard .btn{text-decoration:none}
 .chatcard.mine{background:var(--chip);border-color:var(--line)}
 .chatpanel .switchrow{border:0;padding:0;background:none;box-shadow:none}
+
+/* Feed, compact pass: shorter photo, one action row, caption with name, plugs as a friend's picks */
+.post .head{padding:10px 12px}
+.post img.main{aspect-ratio:4/5}
+.post .body{padding:10px 12px 14px;gap:8px}
+.actrow{display:flex;align-items:center;gap:8px;min-width:0}
+.actrow .heart{padding:5px 12px}
+.minibadges{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.minibadges::-webkit-scrollbar{display:none}
+.mbdg{flex:none;font-size:12px;font-weight:600;padding:3px 8px;border-radius:999px;background:var(--gold-soft);color:var(--score-ink);white-space:nowrap}
+.caption{font-size:15px;line-height:1.4;margin:0}
+.chatcard{padding:10px 12px;gap:8px}
+.chatcard .chatline{font-size:15px}
+.loves{display:flex;flex-direction:column;gap:6px}
+.loveshead{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--score-ink)}
+.lovesrow{display:flex;flex-direction:column;gap:8px}
+.lovesrow.multi{flex-direction:row;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 12px;margin:0 -12px;padding:0 12px 2px;scrollbar-width:none}
+.lovesrow.multi::-webkit-scrollbar{display:none}
+.lovesrow.multi .love{flex:0 0 82%;scroll-snap-align:start}
+.love{display:flex;gap:10px;align-items:center;padding:8px;border-radius:14px;background:var(--gold-soft);color:inherit;text-decoration:none;min-width:0}
+.love img,.lovenoimg{width:56px;height:56px;flex:none;border-radius:10px;object-fit:cover;background:var(--chip)}
+.lovenoimg{display:grid;place-items:center;font-size:22px}
+.lovetext{display:flex;flex-direction:column;gap:2px;min-width:0}
+.lovequote{font-size:14px;line-height:1.3;font-style:italic;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lovepiece{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lovepiece b{color:var(--ink);font-weight:700}
+.loveshop{font-size:12px;font-weight:700;color:var(--accent)}
