@@ -532,7 +532,7 @@ const firstName = id => displayName(id).split(/\s+/)[0];
 const yourTopic = t => t.replace(/^my\b/i,"your");
 function chatLinks(p){
   const phone=S.phones&&S.phones[p.user_id]; if(!phone) return null;
-  const msg=`Hi ${firstName(p.user_id)}! 👋 Loved your ${p.category==="Casual/Hangout"?"":p.category+" "}fit ${CAT_EMOJI[p.category]||"💛"} Tell me all about ${yourTopic(p.chat_topic)}! 😊`;
+  const msg=`Hi ${firstName(p.user_id)}! Loved your ${p.category==="Casual/Hangout"?"":p.category+" "}fit ${CAT_EMOJI[p.category]||"💛"} Tell me all about ${yourTopic(p.chat_topic)}!`;
   const sep=/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)?"&":"?";
   return { text:`sms:${phone}${sep}body=${encodeURIComponent(msg)}`, call:`tel:${phone}` };
 }
