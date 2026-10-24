@@ -294,12 +294,15 @@ function scoreBlock(an, score, cat, fb, recAct){
   const name=k=>k==="goal"?"Your goal":(dims.find(d=>d[0]===k)||[,k])[1];
   const best=dims.reduce((m,d)=>!m||an.dims[d[0]].score>an.dims[m].score?d[0]:m,null);
   const low=an.low&&an.dims[an.low]?an.low:null;
+  const short=l=>({"Proportion & fit":"Proportion","Finishing details":"Details","Occasion fit":"Occasion"})[l]||l;
   const line=[best?`Strongest: <b>${esc(name(best))} ${Number(an.dims[best].score).toFixed(1)}</b>`:"", low&&low!==best?`Room to grow: <b>${esc(name(low))} ${Number(an.dims[low].score).toFixed(1)}</b>`:""].filter(Boolean).join(" · ");
   return `<div class="scoreRow"><div class="score">${fmtScore(score)}<small>/10</small></div><div class="small muted" style="padding-bottom:6px">${score>=BEST?"⭐ In your Best fits":"Style score for "+esc(cat)}<br>Only you see this.</div></div>
     ${badgeChips(an.badges)}
     ${an.review?`<p class="review">${esc(an.review)}</p>`:""}
-    <details class="dimswrap"><summary><span class="small">${line}</span><span class="link small">See full breakdown</span></summary>
-      <div class="dims">${dims.map(([k,label,w])=>{ const d=an.dims[k]; if(k==="goal") label="Your goal: "+esc(an.goal); return `<div class="dim ${an.low===k?"low":""}"><div class="lbl"><span>${label}<em>${Math.round(w*100)}%</em></span><span>${Number(d.score).toFixed(1)}</span></div><div class="bar"><i style="width:${d.score*10}%"></i></div>${d.note?`<p>${esc(d.note)}</p>`:""}</div>`; }).join("")}</div></details>
+    <details class="dimswrap"><summary>
+      <div class="minibars">${dims.map(([k,label])=>{ const d=an.dims[k]; return `<div class="mb ${k===low?"low":""}"><span class="ml">${esc(k==="goal"?"Your goal":short(label))}</span><span class="mbar"><i style="width:${d.score*10}%"></i></span><span class="mv">${Number(d.score).toFixed(1)}</span></div>`; }).join("")}</div>
+      <div class="mfoot"><span class="small muted">${low?`Room to grow: <b>${esc(name(low))}</b>`:best?`Strongest: <b>${esc(name(best))}</b>`:""}</span><span class="link small showwhen-closed">See notes</span><span class="link small showwhen-open">Hide notes</span></div></summary>
+      <div class="mnotes">${dims.map(([k,label,w])=>{ const d=an.dims[k]; return `<div><b>${esc(k==="goal"?"Your goal: "+an.goal:label)}</b> <span class="muted small">${Math.round(w*100)}% of score</span>${d.note?`<p class="small muted">${esc(d.note)}</p>`:""}</div>`; }).join("")}</div></details>
     <div class="stack" style="gap:12px"><h3>Level it up</h3>
       ${an.tweak?recCard("tweak","Tweak",an.tweak.title,an.tweak.detail,fb.tweak,recAct):""}
       ${an.buy?recCard("buy","Buy",an.buy.item,an.buy.why,fb.buy,recAct):an.buyOff?"":`<div class="rec"><span class="kind">Buy</span><b>No need to buy anything for this look!</b></div>`}
