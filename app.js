@@ -319,8 +319,9 @@ function viewFlow(){
       <div class="stack" style="gap:8px"><h2>What's it for?</h2>
         <p class="small muted">${f.guessing?"Reading your outfit…":f.guess?`Best guess: <b>${esc(f.guess)}</b>${f.guessConf==="low"?" (not sure)":""}. Tap another if it's wrong.`:f.guessErr?esc(f.guessErr)+" Pick one below.":"Pick the occasion."}</p></div>
       <div class="chipgrid">${CATS.map(c=>`<button class="chip ${f.cat===c?"on":""} ${f.guess===c&&f.cat!==c?"guess":""}" data-act="pickCat" data-cat="${esc(c)}">${CAT_EMOJI[c]} ${esc(c)}</button>`).join("")}</div>
-      <div class="field"><label for="detail">Details (optional)</label>
-        <input class="input" id="detail" maxlength="60" placeholder="e.g. Fleet Week, dinner date, coffee with Sam" value="${esc(f.detail)}"></div>
+      <div class="field"><label for="detail">Caption (optional)</label>
+        <input class="input" id="detail" maxlength="60" placeholder="Where you're headed: Fleet Week, dinner date…" value="${esc(f.detail)}">
+        <p class="small muted">Helps your score and backdrop, and fills in your post if you share.</p></div>
       <label class="keepbg"><input type="checkbox" id="keepBg" ${f.keepBg?"checked":""}> Keep my own background</label>
       <button class="btn primary block" data-act="runStyle" ${f.cat?"":"disabled"}>${f.keepBg?"Reveal my score":"Choose a backdrop"}</button></div>`;
   } else {
@@ -546,7 +547,7 @@ function viewShare(){
   return `<button class="back" data-act="cancelShare">${ICON.back} Back</button><div class="stack">
     <h2>Share your fit</h2>
     <canvas class="shareCanvas" id="shareCanvas" width="720" height="960" aria-label="Post preview"></canvas>
-    <div class="field"><label for="caption">Caption (optional)</label><input class="input" id="caption" maxlength="140" value="${esc(sh.caption)}" placeholder="Where you're headed, how you feel">${x.detail?`<p class="small muted">Filled in from your occasion notes. Edit it for friends if you like; your saved fit stays as is.</p>`:""}</div>
+    <div class="field"><label for="caption">Caption (optional)</label><input class="input" id="caption" maxlength="140" value="${esc(sh.caption)}" placeholder="Where you're headed: Fleet Week, dinner date…">${x.detail?`<p class="small muted">Your caption from logging this fit. Edit it for friends if you like; your saved fit keeps the original.</p>`:""}</div>
     <div class="stack" style="gap:8px"><h3>Plug something you love</h3>
       ${(x.items||[]).length?x.items.map((it,i)=>{ const p=sh.plugs[i]; return `<div class="plug">
         <label class="ck"><input type="checkbox" data-plug-on="${i}" ${p?"checked":""}>${plugCrop(it)?`<img class="plugthumb" src="${esc(url("fits",plugCrop(it)))}" alt="">`:""} ${esc(it.label)}</label>
@@ -620,13 +621,13 @@ function viewFeed(){
   for(const p of S.posts){
     const h=S.hearts[p.id]||{count:0,mine:false}, name=displayName(p.user_id);
     out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head"><span class="avatar" style="background:${avatarColor(p.user_id)}">${esc(name.slice(0,1).toUpperCase())}</span>
-      <div style="min-width:0"><b>${esc(name)}</b><div class="small muted">${CAT_EMOJI[p.category]||""} ${esc(p.category)}${p.detail?" · "+esc(p.detail):""} · ${esc(ago(p.created_at))}</div></div></div>
+      <div class="headtext"><b>${esc(name)}</b><span class="small muted">${esc(ago(p.created_at))}</span></div><span class="spacer"></span><span class="cpill">${CAT_EMOJI[p.category]||""} ${esc(p.category)}</span></div>
+      ${p.caption||p.detail?`<p class="hook" data-act="hookMore">${esc(p.caption||p.detail)}</p>`:""}
       <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
       <div class="body">
       <div class="actrow"><button class="heart ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}" aria-label="${h.mine?"Unheart":"Heart"} this fit">${h.mine?ICON.heartFill:ICON.heart}${h.count||""}</button>
         ${(p.badges||[]).length?`<span class="minibadges" title="${esc(p.badges.join(", "))}">${p.badges.map(n=>`<span class="mbdg">${badgeIcon(n)} ${esc(n)}</span>`).join("")}</span>`:""}
         <span class="spacer"></span>${p.user_id===S.uid?`<button class="link small" data-act="removePost" data-id="${esc(p.id)}">Remove</button>`:""}</div>
-      ${p.caption?`<p class="caption"><b>${esc(firstName(p.user_id))}</b> ${esc(p.caption)}</p>`:""}
       ${chatCard(p)}
       ${lovesRow(p)}
       </div></article>`;
@@ -636,19 +637,18 @@ function viewFeed(){
 // Plugs, framed as a friend's genuine pick: their words first, then the piece, then a light Shop link.
 function lovesRow(p){
   const plugs=p.plugs||[]; if(!plugs.length) return "";
-  const who=p.user_id===S.uid?"Your":`${esc(firstName(p.user_id))}'s`;
-  return `<div class="loves"><span class="loveshead">💛 ${who} ${plugs.length>1?"favorites":"favorite"}</span><div class="lovesrow ${plugs.length>1?"multi":""}">${plugs.map(g=>{
+  return `<div class="loves"><span class="loveshead">💛 ${plugs.length>1?"Favorites":"Favorite"}</span><div class="lovesrow ${plugs.length>1?"multi":""}">${plugs.map(g=>{
     const shop=safeUrl(g.link)||google([g.brand,g.label].filter(Boolean).join(" ")), pimg=g.img&&url("posts",g.img);
     return `<a class="love" href="${esc(shop)}" target="_blank" rel="noopener noreferrer">${pimg?`<img src="${esc(pimg)}" alt="" loading="lazy">`:`<span class="lovenoimg">💛</span>`}
       <span class="lovetext">${g.review?`<span class="lovequote">“${esc(g.review)}”</span>`:""}<span class="lovepiece">${g.brand?`<b>${esc(g.brand)}</b> · `:""}${esc(g.label)}</span><span class="loveshop">Shop it ↗</span></span></a>`; }).join("")}</div></div>`;
 }
 function chatCard(p){
   if(!chatOpen(p)) return "";
-  if(p.user_id===S.uid) return `<div class="chatcard mine"><div class="chatline"><span class="chatic">💬</span><span>You'd love to chat about <b>${esc(p.chat_topic)}</b></span></div>
-    <div class="row"><span class="small muted">Friends can text or call you until ${esc(untilTime(p.chat_until))}</span><span class="spacer"></span><button class="link small" data-act="endChat" data-id="${esc(p.id)}">End now</button></div></div>`;
+  if(p.user_id===S.uid) return `<div class="chatcard mine"><div class="chatline"><span class="chatic">💬</span><span>Open to chat about <b>${esc(p.chat_topic)}</b></span></div>
+    <div class="row"><span class="small muted">Until ${esc(untilTime(p.chat_until))}</span><span class="spacer"></span><button class="link small" data-act="endChat" data-id="${esc(p.id)}">End now</button></div></div>`;
   const l=chatLinks(p); if(!l) return "";
   return `<div class="chatcard"><div class="chatline"><span class="chatic">💬</span><span>I'd love to chat about <b>${esc(p.chat_topic)}</b></span></div>
-    <div class="row"><a class="btn sm primary" href="${esc(l.text)}">Text ${esc(firstName(p.user_id))}</a><a class="btn sm" href="${esc(l.call)}">Call</a><span class="spacer"></span><span class="small muted">until ${esc(untilTime(p.chat_until))}</span></div></div>`;
+    <div class="row"><a class="btn sm primary" href="${esc(l.text)}">Text</a><a class="btn sm" href="${esc(l.call)}">Call</a><span class="spacer"></span><span class="small muted">until ${esc(untilTime(p.chat_until))}</span></div></div>`;
 }
 async function endChat(id){
   const p=S.posts.find(x=>x.id===id); if(!p) return; const prev=p.chat_until;
@@ -1155,6 +1155,7 @@ const ACT = {
     sb.storage.from("fits").remove([x.image_path,x.thumb_path,x.orig_path].filter(Boolean));
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
+  hookMore:t=>t.classList.toggle("open"),
   endChat:t=>endChat(t.dataset.id),
   savePhone:async()=>{ const phone=cleanPhone(S.phoneIn ?? S.myPhone); if(!phone){ toast("That doesn't look like a phone number."); return; }
     const { error } = await sb.from("contacts").upsert({user_id:S.uid, phone, updated_at:new Date().toISOString()});
