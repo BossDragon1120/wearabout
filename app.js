@@ -746,7 +746,7 @@ async function makeCrops(fit, photoBlob){
     const side=Math.max(cw,ch), sx=Math.max(0,Math.min(W-side,x0+cw/2-side/2)), sy=Math.max(0,Math.min(H-side,y0+ch/2-side/2)), s2=Math.min(side,W,H);
     const c=document.createElement("canvas"); c.width=c.height=320;
     const ctx=c.getContext("2d"); ctx.fillStyle="#F2F1EE"; ctx.fillRect(0,0,320,320); ctx.drawImage(img,sx,sy,s2,s2,0,0,320,320);
-    jobs.push({piece, swatch:dominantColor(img,x0,y0,cw,ch), blob:await toBlob(c,"image/jpeg",.85)});
+    jobs.push({piece, swatch:dominantColor(img,x0,y0,cw,ch,pieceHex(it)), blob:await toBlob(c,"image/jpeg",.85)});
   }
   let schemaMissing=false;
   await Promise.all(jobs.map(async ({piece,swatch,blob})=>{
@@ -760,14 +760,30 @@ async function makeCrops(fit, photoBlob){
   }));
 }
 // Most common color in the middle of the piece, ignoring the edges where background creeps in.
-function dominantColor(img,x,y,w,h){
+// The main colors in part of an image: color groups covering at least 4% of it, biggest first.
+function colorsIn(img,x,y,w,h,minShare=.04){
   const c=document.createElement("canvas"); c.width=c.height=32; const ctx=c.getContext("2d",{willReadFrequently:true});
-  ctx.drawImage(img,x+w*.25,y+h*.25,w*.5,h*.5,0,0,32,32);
+  ctx.drawImage(img,x,y,w,h,0,0,32,32);
   const d=ctx.getImageData(0,0,32,32).data, bins=new Map();
   for(let i=0;i<d.length;i+=4){ const k=(d[i]>>4)<<8|(d[i+1]>>4)<<4|(d[i+2]>>4); const e=bins.get(k)||{n:0,r:0,g:0,b:0}; e.n++; e.r+=d[i]; e.g+=d[i+1]; e.b+=d[i+2]; bins.set(k,e); }
-  let top=null; for(const e of bins.values()) if(!top||e.n>top.n) top=e;
-  const hx=v=>Math.round(v/top.n).toString(16).padStart(2,"0");
-  return "#"+hx(top.r)+hx(top.g)+hx(top.b);
+  const hx=v=>Math.round(v).toString(16).padStart(2,"0");
+  const out=[];
+  for(const e of [...bins.values()].sort((a,b)=>b.n-a.n)){
+    if(e.n<minShare*1024) break;
+    const rgb=[e.r/e.n,e.g/e.n,e.b/e.n];
+    if(out.some(o=>Math.hypot(o.rgb[0]-rgb[0],o.rgb[1]-rgb[1],o.rgb[2]-rgb[2])<40)) continue;   // skip near-duplicates
+    out.push({rgb, hex:"#"+rgb.map(hx).join(""), share:e.n/1024});
+  }
+  return out;
+}
+const hexRgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const colorDist=(a,b)=>{ const [x,y]=[hexRgb(a),hexRgb(b)]; return Math.hypot(x[0]-y[0],x[1]-y[1],x[2]-y[2]); };
+// The piece's main color, measured from the middle of its box. When the name says a color ("white shirt"),
+// pick the measured color closest to it, so a white shirt under a black blazer gets a white dot, not black.
+function dominantColor(img,x,y,w,h,hint){
+  const cols=colorsIn(img,x+w*.25,y+h*.25,w*.5,h*.5); if(!cols.length) return null;
+  if(hint){ const best=cols.reduce((m,c)=>!m||colorDist(c.hex,hint)<colorDist(m.hex,hint)?c:m,null); if(colorDist(best.hex,hint)<170) return best.hex; }
+  return cols[0].hex;
 }
 function shortDay(ds){ if(!ds) return ""; const [y,m,d]=ds.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString(undefined,{month:"short",day:"numeric"}); }
 function viewCloset(){
@@ -831,6 +847,33 @@ function smartKey(c){
   return [kind, ...(hex?colorRank(hex):[2,0,0])];
 }
 function cmpKeys(a,b){ for(let i=0;i<a.length;i++){ if(a[i]!==b[i]) return a[i]<b[i]?-1:1; } return 0; }
+
+// Color choices for a piece: the colors in its close-up first, then (on request) a set of everyday colors.
+const COMMON_COLORS=["#fafafa","#f1e8d2","#dccbab","#c4a27a","#6f4a2f","#8f8f8f","#3f4247","#161616","#1e2a4a","#56739c","#a8c8e8","#2f5fb3","#3f8a4a","#6b6b2e","#c4302b","#6d1a2b","#e88aa8","#e8b4b0","#f0d24a","#e07a2e","#6b3fa0"];
+function swatchChoices(c){
+  const fromPhoto=(S.palettes&&S.palettes[c.id])||[];
+  if(c.crop_path && !(S.palettes&&c.id in S.palettes)) loadPalette(c);
+  // Remember the dot it had when you opened the piece, so changing it never loses the original option.
+  const seen=(S.swatchSeen||(S.swatchSeen={})); if(!(c.id in seen)) seen[c.id]=isHex(c.swatch)?c.swatch:null;
+  const list=[...(seen[c.id]?[seen[c.id]]:[]), ...(c.swatch&&isHex(c.swatch)?[c.swatch]:[]), ...fromPhoto, ...(S.moreColors||!fromPhoto.length?COMMON_COLORS:[])];
+  return list.filter((h,i)=>list.findIndex(x=>x.toLowerCase()===h.toLowerCase())===i).slice(0,30);
+}
+async function loadPalette(c){
+  (S.palettes||(S.palettes={}))[c.id]=[];
+  try {
+    const img=new Image(); img.crossOrigin="anonymous";
+    await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src=url("fits",c.crop_path); });
+    S.palettes[c.id]=colorsIn(img,img.naturalWidth*.1,img.naturalHeight*.1,img.naturalWidth*.8,img.naturalHeight*.8,.02).slice(0,6).map(x=>x.hex);
+    softRender(["item"]);
+  } catch(e){ console.warn("palette",e); }
+}
+async function setSwatch(hex){
+  const c=curItem(); if(!c||!isHex(hex)) return; const prev=c.swatch;
+  c.swatch=hex; render();
+  const { error } = await sb.from("closet_items").update({swatch:hex}).eq("id",c.id);
+  if(error){ c.swatch=prev; render(); toast("Couldn't change the color."); return; }
+  toast("Color updated");
+}
 const curItem=()=>S.closet.find(c=>c.id===S.itemId);
 function viewItem(){
   const c=curItem(); if(!c) return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><p class="muted">This piece isn't in your closet anymore.</p>`;
@@ -845,6 +888,10 @@ function viewItem(){
     <div class="panel"><h3>Edit</h3>
       <div class="field"><label for="itemLabel">Name</label><input class="input" id="itemLabel" maxlength="80" value="${esc(ed.label ?? c.label)}"></div>
       <div class="field"><label for="itemType">Type</label><select class="input" id="itemType">${ITEM_TYPES.map(t=>`<option value="${t}" ${t===(ed.type??c.type)?"selected":""}>${TYPE_LABEL[t]}</option>`).join("")}</select></div>
+      <div class="field"><span class="small" style="font-weight:600">Color</span>
+        <div class="swpick">${swatchChoices(c).map(h=>`<button class="swopt ${c.swatch&&h.toLowerCase()===String(c.swatch).toLowerCase()?"on":""}" data-act="setSwatch" data-hex="${h}" style="background:${h}" aria-label="Use color ${h}"></button>`).join("")}
+          ${S.moreColors?"":`<button class="link small" data-act="moreColors">More colors</button>`}</div>
+        <p class="small muted">${S.palettes&&S.palettes[c.id]&&S.palettes[c.id].length?"First colors are measured from the close-up. ":""}Tap to change the dot.</p></div>
       <button class="btn sm primary" data-act="saveItem">Save</button></div>
     ${others.length?`<div class="panel"><h3>Duplicate?</h3><p class="small muted">Tap the piece this is the same as. Closest matches first.</p>
       <div class="mpick">${others.slice(0, S.mergeAll?others.length:9).map(o=>`<button class="mcand" data-act="mergeAsk" data-from="${esc(c.id)}" data-to="${esc(o.id)}">${pieceThumb(o,stAll[o.id])}<span class="small">${esc(o.label)}</span></button>`).join("")}</div>
@@ -993,13 +1040,15 @@ const ACT = {
       const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); if(error) throw error; render(); toast("Added to closet"); }
     catch(e){ console.error(e); toast("Couldn't add it. Try again."); } },
   closetSort:t=>{ S.closetSort=t.dataset.sort; render(); },
-  openItem:t=>{ S.itemId=t.dataset.id; S.itemEdit=null; S.mergeAll=false; S.mergeAsk=null; S.confirmRemove=false; S.view="item"; render(); scrollTo(0,0); },
+  openItem:t=>{ S.itemId=t.dataset.id; S.itemEdit=null; S.mergeAll=false; S.mergeAsk=null; S.moreColors=false; S.confirmRemove=false; S.view="item"; render(); scrollTo(0,0); },
   saveItem:()=>saveClosetItem(),
   mergeAsk:t=>{ S.mergeAsk={from:t.dataset.from, to:t.dataset.to, keep:t.dataset.to}; render(); },
   mergeKeep:t=>{ if(S.mergeAsk&&!S.mergeAsk.busy){ S.mergeAsk.keep=t.dataset.id; render(); } },
   mergeCancel:()=>{ if(S.mergeAsk&&!S.mergeAsk.busy){ S.mergeAsk=null; render(); } },
   mergeConfirm:()=>mergePieces(),
   mergeAll:()=>{ S.mergeAll=true; render(); },
+  setSwatch:t=>setSwatch(t.dataset.hex),
+  moreColors:()=>{ S.moreColors=true; render(); },
   removeItemAsk:()=>{ S.confirmRemove=true; render(); },
   removeItemCancel:()=>{ S.confirmRemove=false; render(); },
   removeItemConfirm:()=>removeClosetItem(S.itemId),
