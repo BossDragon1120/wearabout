@@ -115,7 +115,7 @@ async function loadMine(){
   S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null; S.goal=(g.data&&g.data.style_goal)||"";
   S.buyRecs=!(g.data && g.data.buy_recs===false); S.buyRecsReady=!g.data || ("buy_recs" in g.data);
   S.closetReady=!c.error; S.closet=c.data||[];
-  await signUrls("fits", S.fits.map(x=>x.thumb_path));
+  await signUrls("fits", [...S.fits.map(x=>x.thumb_path), ...S.closet.map(c=>c.crop_path).filter(Boolean)]);
 }
 async function loadSocial(){
   const { data:fr } = await sb.from("friendships").select("user_id,friend_id");
@@ -348,6 +348,7 @@ async function saveFit(share=false){
     row.items = await linkItems(row.items);
     const { data, error } = await sb.from("fits").insert(row).select().single();
     if(error) throw error;
+    makeCrops(data, f.origBlob).catch(e=>console.error("crops",e));
     S.urls["fits:"+row.image_path]=f.comps[f.bg].url; S.urls["fits:"+row.thumb_path]=URL.createObjectURL(thumb);
     for(const kind of ["tweak","buy"]) if(a && (f.recFb||{})[kind]==="up") await saveIdea(data, kind).catch(console.error);
     S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
@@ -608,6 +609,45 @@ async function backfillCloset(){
   S.closet=[...S.closet, ...fresh];
   for(let i=0;i<changed.length;i+=8) await Promise.all(changed.slice(i,i+8).map(f=>sb.from("fits").update({items:f.items}).eq("id",f.id)));
 }
+const isHex = v => /^#[0-9a-f]{6}$/i.test(String(v||""));
+function pieceThumb(c,e){
+  const crop=c.crop_path&&url("fits",c.crop_path);
+  return `<span class="pthumb ${crop?"crop":""}"><img src="${esc(crop||url("fits",e.thumb))}" alt="" loading="lazy">${isHex(c.swatch)?`<span class="swatch" style="background:${c.swatch}"></span>`:""}</span>`;
+}
+// Cut a close-up of each clearly visible piece from the real photo, and measure its main color from the pixels.
+async function makeCrops(fit, photoBlob){
+  if(!S.closetReady || !photoBlob) return;
+  const todo=(fit.items||[]).filter(it=>it.item_id && Array.isArray(it.box) && it.clear===true)
+    .map(it=>({it, piece:S.closet.find(c=>c.id===it.item_id)})).filter(x=>x.piece && !x.piece.crop_path);
+  if(!todo.length) return;
+  const img=await loadImage(URL.createObjectURL(photoBlob)), W=img.naturalWidth, H=img.naturalHeight;
+  for(const {it,piece} of todo){
+    const [l,t,r,b]=it.box, pad=.06;
+    const x0=Math.max(0,(l-pad*(r-l))*W), y0=Math.max(0,(t-pad*(b-t))*H), x1=Math.min(W,(r+pad*(r-l))*W), y1=Math.min(H,(b+pad*(b-t))*H);
+    const cw=x1-x0, ch=y1-y0; if(cw<24||ch<24) continue;
+    // square-ish thumbnail, piece centered
+    const side=Math.max(cw,ch), sx=Math.max(0,Math.min(W-side,x0+cw/2-side/2)), sy=Math.max(0,Math.min(H-side,y0+ch/2-side/2)), s2=Math.min(side,W,H);
+    const c=document.createElement("canvas"); c.width=c.height=320;
+    const ctx=c.getContext("2d"); ctx.fillStyle="#F2F1EE"; ctx.fillRect(0,0,320,320); ctx.drawImage(img,sx,sy,s2,s2,0,0,320,320);
+    const swatch=dominantColor(img,x0,y0,cw,ch);
+    const blob=await toBlob(c,"image/jpeg",.85), path=`${S.uid}/items/${piece.id}.jpg`;
+    const up=await sb.storage.from("fits").upload(path,blob,{contentType:"image/jpeg",upsert:true}); if(up.error){ console.error(up.error); continue; }
+    const { error } = await sb.from("closet_items").update({crop_path:path, swatch}).eq("id",piece.id);
+    if(error){ console.error(error); if(/crop_path|swatch/.test(error.message||"")) return; continue; }
+    piece.crop_path=path; piece.swatch=swatch; S.urls["fits:"+path]=URL.createObjectURL(blob);
+  }
+  softRender(["closet","item"]);
+}
+// Most common color in the middle of the piece, ignoring the edges where background creeps in.
+function dominantColor(img,x,y,w,h){
+  const c=document.createElement("canvas"); c.width=c.height=32; const ctx=c.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(img,x+w*.25,y+h*.25,w*.5,h*.5,0,0,32,32);
+  const d=ctx.getImageData(0,0,32,32).data, bins=new Map();
+  for(let i=0;i<d.length;i+=4){ const k=(d[i]>>4)<<8|(d[i+1]>>4)<<4|(d[i+2]>>4); const e=bins.get(k)||{n:0,r:0,g:0,b:0}; e.n++; e.r+=d[i]; e.g+=d[i+1]; e.b+=d[i+2]; bins.set(k,e); }
+  let top=null; for(const e of bins.values()) if(!top||e.n>top.n) top=e;
+  const hx=v=>Math.round(v/top.n).toString(16).padStart(2,"0");
+  return "#"+hx(top.r)+hx(top.g)+hx(top.b);
+}
 function shortDay(ds){ if(!ds) return ""; const [y,m,d]=ds.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString(undefined,{month:"short",day:"numeric"}); }
 function viewCloset(){
   if(!S.closetReady) return `<div class="stack"><h2>Closet</h2><div class="note">The Closet needs one quick database update. Run <b>002_closet.sql</b> in Supabase's SQL Editor, then reopen the app.</div></div>`;
@@ -627,7 +667,7 @@ function viewCloset(){
   else for(const type of ITEM_TYPES){
     const group=sorted.filter(c=>(c.type||"other")===type); if(!group.length) continue;
     out+=`<section class="cgroup"><h3>${TYPE_LABEL[type]} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<div class="swipe"><button class="swipe-del" data-act="swipeRemove" data-id="${esc(c.id)}" tabindex="-1">Remove</button><button class="citem" data-act="openItem" data-id="${esc(c.id)}">
-      <img src="${esc(url("fits",e.thumb))}" alt="" loading="lazy"><span class="ctext"><b>${esc(c.label)}</b><span class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</span></span>${ICON.chev}</button></div>`; }).join("")}</section>`;
+      ${pieceThumb(c,e)}<span class="ctext"><b>${esc(c.label)}</b><span class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</span></span>${ICON.chev}</button></div>`; }).join("")}</section>`;
   }
   return out+"</div>";
 }
@@ -638,6 +678,7 @@ function viewItem(){
   const fits=e.fits.map(id=>S.fits.find(f=>f.id===id)).filter(Boolean);
   const others=S.closet.filter(o=>o.id!==c.id && stAll[o.id]).sort((a,b)=>((a.type===c.type)?0:1)-((b.type===c.type)?0:1)||a.label.localeCompare(b.label));
   return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><div class="stack" style="gap:18px">
+    ${c.crop_path&&url("fits",c.crop_path)?`<div class="crophero"><img src="${esc(url("fits",c.crop_path))}" alt="${esc(c.label)}">${c.swatch?`<span class="swatch lg" style="background:${esc(c.swatch)}" title="Main color"></span>`:""}</div>`:""}
     <div><span class="tag">${esc(TYPE_LABEL[c.type]||"Other")}</span><h2 style="margin-top:4px">${esc(c.label)}</h2>
       <p class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</p></div>
     <div class="grid g3">${fits.map(x=>`<button class="card" data-act="openFit" data-id="${esc(x.id)}" data-from="item"><img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit" loading="lazy"><span class="cbody"><span class="cdate">${esc(longDate(x.created_at))}</span><span class="pills"><span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span></span></span></button>`).join("")}</div>

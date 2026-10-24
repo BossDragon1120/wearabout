@@ -240,3 +240,12 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .toast-undo{background:none;border:0;padding:0;color:inherit;font-weight:800;text-decoration:underline;text-underline-offset:3px}
 .swipe-del{opacity:0;transition:opacity .1s}
 .swipe.show .swipe-del{opacity:1}
+/* closet piece thumbnails */
+.pthumb{position:relative;display:block;width:52px}
+.pthumb img{display:block;width:52px;aspect-ratio:3/4;object-fit:cover;border-radius:10px;background:var(--chip)}
+.pthumb.crop img{aspect-ratio:1/1;object-fit:cover}
+.citem{grid-template-columns:52px minmax(0,1fr) auto}
+.swatch{position:absolute;right:-4px;bottom:-4px;width:16px;height:16px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line)}
+.swatch.lg{width:26px;height:26px;right:10px;bottom:10px;border-width:3px}
+.crophero{position:relative;width:min(220px,60%);aspect-ratio:1/1;border-radius:var(--r);overflow:hidden;background:var(--chip)}
+.crophero img{width:100%;height:100%;object-fit:cover;display:block}

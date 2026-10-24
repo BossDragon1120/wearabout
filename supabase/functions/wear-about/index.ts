@@ -70,11 +70,11 @@ ${goal ? `- goal: how well the outfit moves toward the user's own style goal, "$
 ${buy ? `"buy": {"item": the kind of item, described specifically without inventing a brand, "why": at most 25 words, "search": a 3-7 word Google search for it}.` : `"buy": null.`}
 "review": one or two warm, specific sentences on what works.
 "badges": 0 to 3 badges from this exact list, only when clearly earned (many outfits earn none): ${badgeNames(goal).join(", ")}.${goal ? ` "On goal" means the outfit clearly delivers on "${goal}".` : ""}
-"items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")} (use "jacket" for jackets, blazers, shackets and cardigans worn open; "outerwear" for coats, parkas and puffers), "brand": a string only if you are confident, else null, "clear": true only if the whole piece is plainly visible and you are certain of its type, color and material; false if it is partly hidden (for example shoes under long pants), cropped, blurry, in shadow, or you are unsure}.
+"items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")} (use "jacket" for jackets, blazers, shackets and cardigans worn open; "outerwear" for coats, parkas and puffers), "brand": a string only if you are confident, else null, "clear": true only if the whole piece is plainly visible and you are certain of its type, color and material; false if it is partly hidden (for example shoes under long pants), cropped, blurry, in shadow, or you are unsure, "box": only when "clear" is true, the piece's position as [left, top, right, bottom] fractions of the photo's width and height (0 to 1), drawn tightly around that piece alone; otherwise null}.
 If no outfit is visible, reply {"error":"<short reason>"} instead.${closet}
 
 Reply with only JSON in this shape:
-{"dims":{"occasion_fit":{"score":8,"note":"..."},"cohesion":{"score":7.5,"note":"..."},"proportion":{"score":7,"note":"..."},"color":{"score":8,"note":"..."},"details":{"score":6.5,"note":"..."}${goal ? ',"goal":{"score":7,"note":"..."}' : ""}},"review":"...","badges":[],"tweak":{"title":"...","detail":"...","dimension":"details"},"buy":${buy ? '{"item":"...","why":"...","search":"..."}' : "null"},"items":[{"label":"...","type":"top","brand":null,"clear":true${closet ? ',"match":null' : ""}}]}`;
+{"dims":{"occasion_fit":{"score":8,"note":"..."},"cohesion":{"score":7.5,"note":"..."},"proportion":{"score":7,"note":"..."},"color":{"score":8,"note":"..."},"details":{"score":6.5,"note":"..."}${goal ? ',"goal":{"score":7,"note":"..."}' : ""}},"review":"...","badges":[],"tweak":{"title":"...","detail":"...","dimension":"details"},"buy":${buy ? '{"item":"...","why":"...","search":"..."}' : "null"},"items":[{"label":"...","type":"top","brand":null,"clear":true,"box":[0.3,0.2,0.7,0.55]${closet ? ',"match":null' : ""}}]}`;
 
 function parseJson(text: string) {
   try { return JSON.parse(text); } catch { /* fall through */ }
@@ -87,6 +87,15 @@ function parseJson(text: string) {
 
 const clamp = (n: number, a: number, b: number) => Math.min(b, Math.max(a, n));
 const round1 = (n: number) => Math.round(n * 10) / 10;
+
+// A usable crop box: four fractions, in order, covering a sensible part of the photo.
+function cleanBox(b: unknown): number[] | null {
+  if (!Array.isArray(b) || b.length !== 4) return null;
+  const [l, t, r, btm] = b.map(Number);
+  if (![l, t, r, btm].every((n) => Number.isFinite(n) && n >= 0 && n <= 1)) return null;
+  if (r - l < 0.04 || btm - t < 0.04 || (r - l) * (btm - t) > 0.9) return null;
+  return [l, t, r, btm].map((n) => Math.round(n * 1000) / 1000);
+}
 
 // deno-lint-ignore no-explicit-any
 function normalize(a: any, goal: string, refMap: Record<string, string> = {}, buyOn = true) {
@@ -108,6 +117,7 @@ function normalize(a: any, goal: string, refMap: Record<string, string> = {}, bu
   const items = Array.isArray(a.items) ? a.items.filter((i: any) => i && i.label).slice(0, 20).map((i: any) => ({
     label: String(i.label).slice(0, 80), type: ITEM_TYPES.includes(i.type) ? i.type : "other", brand: i.brand ? String(i.brand).slice(0, 40) : null,
     clear: i.clear === true,
+    box: i.clear === true ? cleanBox(i.box) : null,
     match: refMap[String(i.match ?? "")] ?? null,
   })) : [];
   // One closet piece can only be worn once per outfit: keep the first match, drop repeats.

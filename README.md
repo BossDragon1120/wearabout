@@ -52,6 +52,8 @@ Command line instead: `supabase functions deploy wear-about`, then `supabase sec
 ### Closet (one-time update for projects set up before the Closet existed)
 Run [`supabase/migrations/002_closet.sql`](supabase/migrations/002_closet.sql) in the SQL Editor, and paste the latest `supabase/functions/wear-about/index.ts` into the `wear-about` function again. New projects get the closet table from `schema.sql` automatically.
 
+Later updates, each run once in the SQL Editor: [`003_buy_recs.sql`](supabase/migrations/003_buy_recs.sql) (buy recommendations switch) and [`004_closet_crops.sql`](supabase/migrations/004_closet_crops.sql) (closet close-ups and color swatches). Re-paste the function after each.
+
 ### 5. GitHub Pages
 In this repo: **Settings → Pages → Build and deployment → Deploy from a branch**, branch `main`, folder `/ (root)`. Your app appears at `https://bossdragon1120.github.io/wearabout/` within a minute or two.
 

@@ -45,6 +45,8 @@ create table public.closet_items (
   label text not null check (char_length(label) between 1 and 80),
   type text not null default 'other',
   brand text,
+  crop_path text,                           -- close-up cut from a fit photo
+  swatch text,                              -- main color measured from that close-up
   created_at timestamptz not null default now()
 );
 create index closet_items_user on public.closet_items (user_id);
