@@ -40,7 +40,7 @@ const S = {
   urls:{},
   view:"home", filter:{cat:null,best:false},
   flow:null, fitId:null, share:null, confirmDel:false, friendMsg:"", codeIn:"", handleIn:null, goal:"", goalEdit:false, goalIn:null, buyRecs:true, ideasFilter:"all",
-  closet:[], closetReady:false, closetSort:"most", itemId:null, itemEdit:null, mergeTo:"", confirmRemove:false, fitBack:"home",
+  closet:[], closetReady:false, closetSort:"most", itemId:null, itemEdit:null, mergeAsk:null, confirmRemove:false, fitBack:"home",
   auth:{step:"email", email:"", code:"", busy:false, msg:""},
 };
 
@@ -219,7 +219,7 @@ function render(){
 }
 function softRender(views){
   const a=document.activeElement, typing=a && a.closest && a.closest("#main") && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
-  if(views.includes(S.view) && !typing) render();
+  if(views.includes(S.view) && !typing && !S.dragging) render();
 }
 function renderTabs(){
   const homeish=["home","fit","flow","share"].includes(S.view);
@@ -784,14 +784,14 @@ function viewCloset(){
     <p class="small muted" style="margin-top:-6px">Built from your logged fits. Each new fit adds or matches pieces automatically.</p>
     <div class="chips sortrow" role="toolbar" aria-label="Sort">${[["smart","✨ Smart"],["most","Most worn"],["least","Least worn"],["recent","Recent"]].map(([k,l])=>`<button class="chip ${S.closetSort===k?"on":""}" data-act="closetSort" data-sort="${k}" aria-pressed="${S.closetSort===k}">${l}</button>`).join("")}</div>`;
   if(!S.loaded) out+=`<div class="note plain">Loading your closet…</div>`;
-  else if(live.length) out+=`<p class="small muted">Swipe a piece left to remove it.</p>`;
+  else if(live.length) out+=`<p class="small muted">Swipe left to remove. Hold a piece and drag it onto its twin to merge.</p>`;
   if(S.loaded && !live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;
   else for(const type of ITEM_TYPES){
     const group=sorted.filter(c=>(c.type||"other")===type); if(!group.length) continue;
     out+=`<section class="cgroup"><h3>${TYPE_LABEL[type]} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<div class="swipe" data-key="piece-${esc(c.id)}"><button class="swipe-del" data-act="swipeRemove" data-id="${esc(c.id)}" tabindex="-1">Remove</button><button class="citem" data-act="openItem" data-id="${esc(c.id)}">
       ${pieceThumb(c,e)}<span class="ctext"><b>${esc(c.label)}</b><span class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</span></span>${ICON.chev}</button></div>`; }).join("")}</section>`;
   }
-  return out+"</div>";
+  return out+mergeSheet()+"</div>";
 }
 
 /* --- smart sort: within each type, group by kind of piece, then by color, then most worn --- */
@@ -836,7 +836,7 @@ function viewItem(){
   const c=curItem(); if(!c) return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><p class="muted">This piece isn't in your closet anymore.</p>`;
   const stAll=closetStats(), e=stAll[c.id]||{count:0,fits:[]}, ed=S.itemEdit||{};
   const fits=e.fits.map(id=>S.fits.find(f=>f.id===id)).filter(Boolean);
-  const others=S.closet.filter(o=>o.id!==c.id && stAll[o.id]).sort((a,b)=>((a.type===c.type)?0:1)-((b.type===c.type)?0:1)||a.label.localeCompare(b.label));
+  const others=S.closet.filter(o=>o.id!==c.id && stAll[o.id]).map(o=>[o,likeness(c,o)]).sort((a,b)=>b[1]-a[1]||a[0].label.localeCompare(b[0].label)).map(x=>x[0]);
   return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><div class="stack" style="gap:18px">
     ${c.crop_path&&url("fits",c.crop_path)?`<div class="crophero"><img src="${esc(url("fits",c.crop_path))}" alt="${esc(c.label)}">${c.swatch?`<span class="swatch lg" style="background:${esc(c.swatch)}" title="Main color"></span>`:""}</div>`:""}
     <div><span class="tag">${esc(TYPE_LABEL[c.type]||"Other")}</span><h2 style="margin-top:4px">${esc(c.label)}</h2>
@@ -846,10 +846,11 @@ function viewItem(){
       <div class="field"><label for="itemLabel">Name</label><input class="input" id="itemLabel" maxlength="80" value="${esc(ed.label ?? c.label)}"></div>
       <div class="field"><label for="itemType">Type</label><select class="input" id="itemType">${ITEM_TYPES.map(t=>`<option value="${t}" ${t===(ed.type??c.type)?"selected":""}>${TYPE_LABEL[t]}</option>`).join("")}</select></div>
       <button class="btn sm primary" data-act="saveItem">Save</button></div>
-    ${others.length?`<div class="panel"><h3>Duplicate?</h3><p class="small muted">If this is the same piece as another one, merge them. Its fits move over and this entry goes away.</p>
-      <select class="input" id="mergeTo" aria-label="Merge into"><option value="">Same piece as…</option>${others.map(o=>`<option value="${esc(o.id)}" ${S.mergeTo===o.id?"selected":""}>${esc(o.label)}${o.type!==c.type?` (${esc(TYPE_LABEL[o.type]||o.type)})`:""}</option>`).join("")}</select>
-      <button class="btn sm" data-act="mergeItem" ${S.mergeTo?"":"disabled"}>Merge</button></div>`:""}
+    ${others.length?`<div class="panel"><h3>Duplicate?</h3><p class="small muted">Tap the piece this is the same as. Closest matches first.</p>
+      <div class="mpick">${others.slice(0, S.mergeAll?others.length:9).map(o=>`<button class="mcand" data-act="mergeAsk" data-from="${esc(c.id)}" data-to="${esc(o.id)}">${pieceThumb(o,stAll[o.id])}<span class="small">${esc(o.label)}</span></button>`).join("")}</div>
+      ${!S.mergeAll&&others.length>9?`<button class="link small" data-act="mergeAll">Show all ${others.length}</button>`:""}</div>`:""}
     <div class="row"><span class="spacer"></span><button class="btn ghost sm" data-act="removeItemAsk">Remove from closet</button></div>
+    ${mergeSheet()}
     ${S.confirmRemove?`<div class="confirm"><span class="small" style="flex:1;min-width:160px">Remove this piece? Your fits stay as they are; it just won't be tracked in your closet.</span><button class="btn sm" data-act="removeItemCancel">Keep</button><button class="btn sm primary" data-act="removeItemConfirm">Remove</button></div>`:""}
   </div>`;
 }
@@ -869,16 +870,46 @@ async function saveClosetItem(){
   if(error){ toast("Couldn't save. Try again."); return; }
   c.label=label; c.type=type; S.itemEdit=null; render(); toast("Saved");
 }
-async function mergeClosetItem(){
-  const c=curItem(), to=S.mergeTo; if(!c||!to) return;
+// How alike two pieces look on paper: same type counts most, then shared words in the name, then color.
+function pieceHex(c){ const name=" "+normLabel(c.label)+" "; const w=COLOR_KEYS.find(k=>new RegExp(`\\b${k}\\b`).test(name)); return w?COLOR_WORDS[w]:isHex(c.swatch)?c.swatch:null; }
+const STOP=new Set(["the","and","with","a","an","of","in","top","pair"]);
+const words=c=>new Set(normLabel(c.label).split(/[^a-z0-9]+/).filter(w=>w.length>2&&!STOP.has(w)));
+function likeness(a,b){
+  let s=a.type===b.type?10:0;
+  const wa=words(a), wb=words(b); for(const w of wa) if(wb.has(w)) s+=3;
+  const ha=pieceHex(a), hb=pieceHex(b);
+  if(ha&&hb){ const n=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)); const [x,y]=[n(ha),n(hb)]; s+=4*(1-Math.hypot(x[0]-y[0],x[1]-y[1],x[2]-y[2])/441); }
+  return s;
+}
+// Confirm before merging: both close-ups side by side, and you pick which name stays.
+function mergeSheet(){
+  const m=S.mergeAsk; if(!m) return "";
+  const a=S.closet.find(c=>c.id===m.from), b=S.closet.find(c=>c.id===m.to); if(!a||!b) return "";
+  const st=closetStats();
+  return `<div class="sheetback" data-act="mergeCancel"></div><div class="sheet" role="dialog" aria-label="Merge pieces">
+    <h3>Same piece?</h3><p class="small muted">Their fits combine into one piece. Tap the name to keep.</p>
+    <div class="mpair">${[b,a].map(c=>`<button class="mopt ${m.keep===c.id?"on":""}" data-act="mergeKeep" data-id="${esc(c.id)}" aria-pressed="${m.keep===c.id}">${pieceThumb(c,st[c.id]||{})}<b class="small">${esc(c.label)}</b><span class="small muted">Worn ${(st[c.id]||{count:0}).count}×</span></button>`).join("")}</div>
+    <div class="row" style="flex-wrap:nowrap"><button class="btn block" data-act="mergeCancel" ${m.busy?"disabled":""}>Cancel</button><button class="btn primary block" data-act="mergeConfirm" ${m.busy?"disabled":""}>${m.busy?"Merging…":"Merge"}</button></div></div>`;
+}
+async function mergePieces(){
+  const m=S.mergeAsk; if(!m||m.busy) return;
+  const keep=S.closet.find(c=>c.id===m.keep), gone=S.closet.find(c=>c.id===(m.keep===m.to?m.from:m.to)); if(!keep||!gone) return;
+  m.busy=true; render();
   try {
     await updateFitsItems(items=>{
-      const hasTo=items.some(i=>i.item_id===to);
-      return items.flatMap(i=> i.item_id!==c.id ? [i] : hasTo ? [] : [{...i,item_id:to}]);
+      const hasKeep=items.some(i=>i.item_id===keep.id);
+      return items.flatMap(i=> i.item_id!==gone.id ? [i] : hasKeep ? [] : [{...i,item_id:keep.id}]);
     });
-    const { error } = await sb.from("closet_items").delete().eq("id",c.id); if(error) throw error;
-    S.closet=S.closet.filter(x=>x.id!==c.id); S.itemId=to; S.mergeTo=""; S.itemEdit=null; render(); scrollTo(0,0); toast("Merged");
-  } catch(e){ console.error(e); toast("Couldn't merge. Try again."); }
+    // Keep the close-up if only the merged-away piece had one.
+    if(!keep.crop_path && gone.crop_path){
+      const { error } = await sb.from("closet_items").update({crop_path:gone.crop_path, swatch:gone.swatch||null}).eq("id",keep.id);
+      if(!error){ keep.crop_path=gone.crop_path; keep.swatch=gone.swatch; }
+    }
+    const { error } = await sb.from("closet_items").delete().eq("id",gone.id); if(error) throw error;
+    S.closet=S.closet.filter(x=>x.id!==gone.id); S.mergeAsk=null;
+    if(S.view==="item"){ S.itemId=keep.id; S.itemEdit=null; S.mergeAll=false; S.renderedView=null; render(); scrollTo(0,0); } else render();
+    toast("Merged");
+  } catch(e){ console.error(e); if(S.mergeAsk) S.mergeAsk.busy=false; render(); toast("Couldn't merge. Try again."); }
 }
 async function removeClosetItem(id=S.itemId){
   const c=S.closet.find(x=>x.id===id); if(!c) return;
@@ -898,20 +929,51 @@ async function removeClosetItem(id=S.itemId){
 let sw=null;
 const hideDel=row=>setTimeout(()=>{ if(!row.classList.contains("open")) row.parentElement.classList.remove("show"); },220);
 const closeSwipes=keep=>document.querySelectorAll(".swipe .citem.open").forEach(r=>{ if(r!==keep){ r.classList.remove("open"); hideDel(r); } });
+// Press and hold a closet row, then drag it onto another to merge them.
+let drag=null, holdT=null;
+function startDrag(row, x, y){
+  const r=row.getBoundingClientRect(), ghost=row.cloneNode(true);
+  ghost.classList.add("dragghost"); ghost.style.cssText=`position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;margin:0;pointer-events:none;z-index:50`;
+  document.body.append(ghost); row.parentElement.classList.add("dragging");
+  drag={row, id:row.dataset.id, ghost, ox:x-r.left, oy:y-r.top, x, y, target:null, raf:0};
+  S.dragging=true; if(navigator.vibrate) navigator.vibrate(12);
+  const tick=()=>{ if(!drag) return; const edge=72, h=innerHeight;   // scroll the list when you hold near the top or bottom
+    if(drag.y<edge+70) scrollBy(0,-Math.ceil((edge+70-drag.y)/6)); else if(drag.y>h-edge) scrollBy(0,Math.ceil((drag.y-(h-edge))/6));
+    pickTarget(); drag.raf=requestAnimationFrame(tick); };
+  drag.raf=requestAnimationFrame(tick);
+}
+function pickTarget(){
+  const el=document.elementFromPoint(drag.x, drag.y), row=el&&el.closest(".swipe .citem");
+  const t=row&&row.dataset.id!==drag.id?row:null;
+  if(t!==drag.target){ drag.target?.parentElement.classList.remove("droptarget"); t?.parentElement.classList.add("droptarget"); drag.target=t; }
+}
+function endDrag(drop){
+  if(!drag) return; cancelAnimationFrame(drag.raf);
+  const {row,ghost,target,id}=drag; ghost.remove(); row.parentElement.classList.remove("dragging"); target?.parentElement.classList.remove("droptarget");
+  row.dataset.swiped="1"; setTimeout(()=>{ delete row.dataset.swiped; },350);   // don't open the piece after letting go
+  drag=null; S.dragging=false;
+  if(drop && target){ S.mergeAsk={from:id, to:target.dataset.id, keep:target.dataset.id}; render(); }
+}
 document.addEventListener("touchstart",e=>{
   const row=e.target.closest(".swipe .citem");
   if(!row){ if(!e.target.closest(".swipe-del")) closeSwipes(null); return; }
   closeSwipes(row);
   const t=e.touches[0]; sw={row, x:t.clientX, y:t.clientY, dx:0, base:row.classList.contains("open")?-96:0, dir:null};
   row.style.transition="none";
+  clearTimeout(holdT);
+  if(!row.classList.contains("open") && S.closet.length>1) holdT=setTimeout(()=>{ if(sw && !sw.dir){ const s0=sw; sw=null; s0.row.style.transition=""; startDrag(s0.row, s0.x, s0.y); } },450);
 },{passive:true});
 document.addEventListener("touchmove",e=>{
+  if(drag){ e.preventDefault(); const t=e.touches[0]; drag.x=t.clientX; drag.y=t.clientY;
+    drag.ghost.style.left=(t.clientX-drag.ox)+"px"; drag.ghost.style.top=(t.clientY-drag.oy)+"px"; return; }
   if(!sw) return; const t=e.touches[0], dx=t.clientX-sw.x, dy=t.clientY-sw.y;
-  if(!sw.dir){ if(Math.abs(dx)<8&&Math.abs(dy)<8) return; sw.dir=Math.abs(dx)>Math.abs(dy)?"h":"v"; }
+  if(!sw.dir){ if(Math.abs(dx)<8&&Math.abs(dy)<8) return; clearTimeout(holdT); sw.dir=Math.abs(dx)>Math.abs(dy)?"h":"v"; }
   if(sw.dir!=="h") return;
   e.preventDefault(); sw.row.parentElement.classList.add("show"); sw.dx=Math.min(0,Math.max(-120,sw.base+dx)); sw.row.style.transform=`translateX(${sw.dx}px)`;
 },{passive:false});
+document.addEventListener("touchcancel",()=>{ clearTimeout(holdT); endDrag(false); });
 document.addEventListener("touchend",()=>{
+  clearTimeout(holdT); if(drag){ endDrag(true); return; }
   if(!sw) return; const {row,dir}=sw; row.style.transition="";
   if(dir==="h"){ row.classList.toggle("open", sw.dx<-48); row.style.transform=""; hideDel(row); row.dataset.swiped="1"; setTimeout(()=>{ delete row.dataset.swiped; },350); }
   sw=null;
@@ -919,7 +981,7 @@ document.addEventListener("touchend",()=>{
 
 /* ---------- actions ---------- */
 const ACT = {
-  nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.savedMsg=null; S.confirmDel=false; render(); scrollTo(0,0);
+  nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.confirmDel=false; render(); scrollTo(0,0);
     if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
   log:()=>{ S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
   changePhoto:()=>{ S.replacing=true; const i=$("#photoIn"); i.value=""; i.click(); },
@@ -931,9 +993,13 @@ const ACT = {
       const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); if(error) throw error; render(); toast("Added to closet"); }
     catch(e){ console.error(e); toast("Couldn't add it. Try again."); } },
   closetSort:t=>{ S.closetSort=t.dataset.sort; render(); },
-  openItem:t=>{ S.itemId=t.dataset.id; S.itemEdit=null; S.mergeTo=""; S.confirmRemove=false; S.view="item"; render(); scrollTo(0,0); },
+  openItem:t=>{ S.itemId=t.dataset.id; S.itemEdit=null; S.mergeAll=false; S.mergeAsk=null; S.confirmRemove=false; S.view="item"; render(); scrollTo(0,0); },
   saveItem:()=>saveClosetItem(),
-  mergeItem:()=>mergeClosetItem(),
+  mergeAsk:t=>{ S.mergeAsk={from:t.dataset.from, to:t.dataset.to, keep:t.dataset.to}; render(); },
+  mergeKeep:t=>{ if(S.mergeAsk&&!S.mergeAsk.busy){ S.mergeAsk.keep=t.dataset.id; render(); } },
+  mergeCancel:()=>{ if(S.mergeAsk&&!S.mergeAsk.busy){ S.mergeAsk=null; render(); } },
+  mergeConfirm:()=>mergePieces(),
+  mergeAll:()=>{ S.mergeAll=true; render(); },
   removeItemAsk:()=>{ S.confirmRemove=true; render(); },
   removeItemCancel:()=>{ S.confirmRemove=false; render(); },
   removeItemConfirm:()=>removeClosetItem(S.itemId),
@@ -1036,7 +1102,6 @@ document.addEventListener("change", e=>{
   else if(t.id==="keepBg"&&S.flow){ S.flow.keepBg=t.checked; render(); }
   else if(t.id==="buyRecs") setBuyRecs(t.checked);
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
-  else if(t.id==="mergeTo") { S.mergeTo=t.value; render(); }
   else if(t.id==="blurOn"&&S.share){ S.share.blur.on=t.checked; render(); }
   else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn; if(t.checked) S.share.plugs[i]={brand:(curFit()?.items?.[i]?.brand)||"",review:""}; else delete S.share.plugs[i]; render(); }
 });
