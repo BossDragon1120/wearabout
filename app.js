@@ -55,7 +55,12 @@ function addDays(ds,n){ const [y,m,d]=ds.split("-").map(Number); return localDat
 const longDate = ts => new Date(ts).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
 function ago(ts){ const s=(Date.now()-new Date(ts))/1000; if(s<60) return "just now"; if(s<3600) return Math.floor(s/60)+"m ago"; if(s<86400) return Math.floor(s/3600)+"h ago"; if(s<604800) return Math.floor(s/86400)+"d ago"; return longDate(ts); }
 let toastT;
-function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,2800); }
+function toast(msg, undo){
+  const t=$("#toast"); t.textContent=msg;
+  if(undo){ const b=document.createElement("button"); b.className="toast-undo"; b.textContent="Undo";
+    b.onclick=()=>{ t.hidden=true; Promise.resolve(undo()).catch(()=>toast("Couldn't undo. Try again.")); }; t.append(b); }
+  t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, undo?5000:2800);
+}
 const url = (bucket,path) => S.urls[bucket+":"+path] || "";
 const me = () => S.uid;
 const mutual = () => [...S.out].filter(id=>S.inc.has(id));
@@ -617,11 +622,12 @@ function viewCloset(){
     <p class="small muted" style="margin-top:-6px">Built from your logged fits. Each new fit adds or matches pieces automatically.</p>
     <div class="chips" role="toolbar" aria-label="Sort">${[["most","Most worn"],["recent","Recently worn"],["least","Least worn"]].map(([k,l])=>`<button class="chip ${S.closetSort===k?"on":""}" data-act="closetSort" data-sort="${k}" aria-pressed="${S.closetSort===k}">${l}</button>`).join("")}</div>`;
   if(!S.loaded) out+=`<div class="note plain">Loading your closet…</div>`;
-  else if(!live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;
+  else if(live.length) out+=`<p class="small muted">Swipe a piece left to remove it.</p>`;
+  if(S.loaded && !live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;
   else for(const type of ITEM_TYPES){
     const group=sorted.filter(c=>(c.type||"other")===type); if(!group.length) continue;
-    out+=`<section class="cgroup"><h3>${TYPE_LABEL[type]} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<button class="citem" data-act="openItem" data-id="${esc(c.id)}">
-      <img src="${esc(url("fits",e.thumb))}" alt="" loading="lazy"><span class="ctext"><b>${esc(c.label)}</b><span class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</span></span>${ICON.chev}</button>`; }).join("")}</section>`;
+    out+=`<section class="cgroup"><h3>${TYPE_LABEL[type]} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<div class="swipe"><button class="swipe-del" data-act="swipeRemove" data-id="${esc(c.id)}" tabindex="-1">Remove</button><button class="citem" data-act="openItem" data-id="${esc(c.id)}">
+      <img src="${esc(url("fits",e.thumb))}" alt="" loading="lazy"><span class="ctext"><b>${esc(c.label)}</b><span class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</span></span>${ICON.chev}</button></div>`; }).join("")}</section>`;
   }
   return out+"</div>";
 }
@@ -673,14 +679,42 @@ async function mergeClosetItem(){
     S.closet=S.closet.filter(x=>x.id!==c.id); S.itemId=to; S.mergeTo=""; S.itemEdit=null; render(); scrollTo(0,0); toast("Merged");
   } catch(e){ console.error(e); toast("Couldn't merge. Try again."); }
 }
-async function removeClosetItem(){
-  const c=curItem(); if(!c) return;
+async function removeClosetItem(id=S.itemId){
+  const c=S.closet.find(x=>x.id===id); if(!c) return;
+  const before=S.fits.filter(f=>(f.items||[]).some(i=>i.item_id===id)).map(f=>({f, items:JSON.parse(JSON.stringify(f.items))}));
   try {
     await updateFitsItems(items=>items.map(i=>i.item_id===c.id?{...i,item_id:null}:i));
     const { error } = await sb.from("closet_items").delete().eq("id",c.id); if(error) throw error;
-    S.closet=S.closet.filter(x=>x.id!==c.id); S.view="closet"; S.confirmRemove=false; render(); toast("Removed from closet");
+    S.closet=S.closet.filter(x=>x.id!==c.id); S.view="closet"; S.confirmRemove=false; render();
+    toast("Removed from closet", async()=>{
+      const r=await sb.from("closet_items").insert({id:c.id,label:c.label,type:c.type,brand:c.brand||null}); if(r.error) throw r.error;
+      for(const b of before){ b.f.items=b.items; await sb.from("fits").update({items:b.items}).eq("id",b.f.id); }
+      S.closet=[...S.closet,c]; render(); toast("Restored");
+    });
   } catch(e){ console.error(e); toast("Couldn't remove. Try again."); }
 }
+// Swipe left on a closet row to reveal Remove.
+let sw=null;
+const hideDel=row=>setTimeout(()=>{ if(!row.classList.contains("open")) row.parentElement.classList.remove("show"); },220);
+const closeSwipes=keep=>document.querySelectorAll(".swipe .citem.open").forEach(r=>{ if(r!==keep){ r.classList.remove("open"); hideDel(r); } });
+document.addEventListener("touchstart",e=>{
+  const row=e.target.closest(".swipe .citem");
+  if(!row){ if(!e.target.closest(".swipe-del")) closeSwipes(null); return; }
+  closeSwipes(row);
+  const t=e.touches[0]; sw={row, x:t.clientX, y:t.clientY, dx:0, base:row.classList.contains("open")?-96:0, dir:null};
+  row.style.transition="none";
+},{passive:true});
+document.addEventListener("touchmove",e=>{
+  if(!sw) return; const t=e.touches[0], dx=t.clientX-sw.x, dy=t.clientY-sw.y;
+  if(!sw.dir){ if(Math.abs(dx)<8&&Math.abs(dy)<8) return; sw.dir=Math.abs(dx)>Math.abs(dy)?"h":"v"; }
+  if(sw.dir!=="h") return;
+  e.preventDefault(); sw.row.parentElement.classList.add("show"); sw.dx=Math.min(0,Math.max(-120,sw.base+dx)); sw.row.style.transform=`translateX(${sw.dx}px)`;
+},{passive:false});
+document.addEventListener("touchend",()=>{
+  if(!sw) return; const {row,dir}=sw; row.style.transition="";
+  if(dir==="h"){ row.classList.toggle("open", sw.dx<-48); row.style.transform=""; hideDel(row); row.dataset.swiped="1"; setTimeout(()=>{ delete row.dataset.swiped; },350); }
+  sw=null;
+});
 
 /* ---------- actions ---------- */
 const ACT = {
@@ -700,7 +734,8 @@ const ACT = {
   mergeItem:()=>mergeClosetItem(),
   removeItemAsk:()=>{ S.confirmRemove=true; render(); },
   removeItemCancel:()=>{ S.confirmRemove=false; render(); },
-  removeItemConfirm:()=>removeClosetItem(),
+  removeItemConfirm:()=>removeClosetItem(S.itemId),
+  swipeRemove:t=>removeClosetItem(t.dataset.id),
   cancelFlow:()=>{ S.flow=null; S.view="home"; render(); },
   pickCat:t=>{ S.flow.cat=t.dataset.cat; render(); },
   runStyle:()=>runStyle(),
@@ -760,6 +795,8 @@ const ACT = {
   authBack:()=>{ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); },
 };
 document.addEventListener("click", e=>{
+  const ci=e.target.closest(".swipe .citem");
+  if(ci && (ci.dataset.swiped || ci.classList.contains("open"))){ ci.classList.remove("open"); hideDel(ci); return; }
   const c=e.target.closest("#shareCanvas");
   if(c&&S.share&&S.share.blur.on){ const r=c.getBoundingClientRect(); S.share.blur.x=(e.clientX-r.left)/r.width; S.share.blur.y=(e.clientY-r.top)/r.height; drawShare(); return; }
   const t=e.target.closest("[data-act]"); if(!t||t.disabled) return; const f=ACT[t.dataset.act]; if(f) f(t,e);

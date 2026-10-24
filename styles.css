@@ -229,3 +229,14 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .switch:checked{background:var(--accent)}
 .switch:checked::after{transform:translateX(20px)}
 @media (prefers-reduced-motion:reduce){.switch,.switch::after{transition:none}}
+/* swipe to remove */
+:root{--danger:#C2412D}
+.swipe{position:relative;border-radius:16px;overflow:hidden}
+.swipe-del{position:absolute;top:0;right:0;bottom:0;width:96px;border:0;background:var(--danger);color:#FFFFFF;font-weight:700;font-size:14px}
+.swipe .citem{position:relative;z-index:1;width:100%;transition:transform .2s ease}
+.swipe .citem.open{transform:translateX(-96px)}
+@media (prefers-reduced-motion:reduce){.swipe .citem{transition:none}}
+.toast{display:flex;align-items:center;gap:12px}
+.toast-undo{background:none;border:0;padding:0;color:inherit;font-weight:800;text-decoration:underline;text-underline-offset:3px}
+.swipe-del{opacity:0;transition:opacity .1s}
+.swipe.show .swipe-del{opacity:1}
