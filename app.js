@@ -59,6 +59,8 @@ const APP_URL = location.origin + location.pathname;
   } catch {}
   if(code||tok){ const u=new URL(location.href); u.searchParams.delete("invite"); u.searchParams.delete("t"); history.replaceState(null,"",u.pathname+u.search+u.hash); }
 })();
+// Opening from a notification: ?go=feed or ?go=friends.
+const START_VIEW = (()=>{ const g=new URLSearchParams(location.search).get("go"); if(g){ const u=new URL(location.href); u.searchParams.delete("go"); history.replaceState(null,"",u.pathname+u.search+u.hash); } return ["feed","friends"].includes(g)?g:null; })();
 const pendingInvite = () => { try{ return localStorage.getItem("wa_invite")||""; }catch{ return ""; } };
 const pendingToken = () => { try{ return localStorage.getItem("wa_invite_t")||""; }catch{ return ""; } };
 const clearInvite = () => { try{ localStorage.removeItem("wa_invite"); localStorage.removeItem("wa_invite_t"); }catch{} };
@@ -144,6 +146,8 @@ async function loadMine(){
   ]);
   S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null; S.goal=(g.data&&g.data.style_goal)||"";
   S.buyRecs=!(g.data && g.data.buy_recs===false);
+  S.notifyReady=!!(g.data ? ("notify_posts" in g.data) : await sb.from("user_settings").select("notify_posts").limit(1).then(r=>!r.error));
+  S.notify={posts:!(g.data&&g.data.notify_posts===false), friends:!(g.data&&g.data.notify_friends===false)};
   S.closetReady=!c.error; S.closet=c.data||[];
   S.chatReady=!ph.error; S.myPhone=(ph.data&&ph.data.phone)||"";
   S.avatarReady=!!(S.profile && "avatar_path" in S.profile);
@@ -156,7 +160,7 @@ async function loadSocial(){
   if(freshUrls()) signUrls("fits", [...S.fits.map(x=>x.thumb_path), ...S.closet.map(c=>c.crop_path).filter(Boolean)]).then(()=>softRender(["home","closet","item","saved"])).catch(()=>{});
   // Friendships and posts don't depend on each other, so fetch them together, then names, hearts and photos together.
   const [{ data:fr }, { data:posts }] = await Promise.all([
-    sb.from("friendships").select("user_id,friend_id"),
+    sb.from("friendships").select("user_id,friend_id,created_at"),
     sb.from("posts").select("*").order("created_at",{ascending:false}).limit(60),
   ]);
   S.out=new Set((fr||[]).filter(x=>x.user_id===S.uid).map(x=>x.friend_id));
@@ -176,6 +180,27 @@ async function loadSocial(){
   const hearts={};
   (h.data||[]).forEach(x=>{ const e=hearts[x.post_id]||(hearts[x.post_id]={count:0,mine:false}); e.count++; if(x.user_id===S.uid) e.mine=true; });
   S.posts=list; S.hearts=hearts; S.socialAt=Date.now();
+  // When each friendship became mutual (the later of the two sides), for the "new friend" dot.
+  const since={}; (fr||[]).forEach(x=>{ const other=x.user_id===S.uid?x.friend_id:x.user_id; since[other]=since[other]&&since[other]>x.created_at?since[other]:x.created_at; });
+  S.friendSince=since; updateBadges();
+}
+
+/* ---------- what's new (tab dots) ---------- */
+// Per phone: when you last looked at the Feed and Friends tabs. New posts or new friends since then get a dot.
+function seenGet(){ try{ return JSON.parse(localStorage.getItem("wa_seen_"+S.uid)||"null"); }catch{ return null; } }
+function seenSet(k){ const s=seenGet()||{}; s[k]=new Date().toISOString(); try{ localStorage.setItem("wa_seen_"+S.uid, JSON.stringify(s)); }catch{} }
+function updateBadges(){
+  if(!S.uid) return;
+  let seen=seenGet(); if(!seen){ seenSet("feed"); seenSet("friends"); seen=seenGet()||{}; }   // first time on this phone: nothing is "new"
+  const m=new Set(mutual());
+  S.dotFeed = S.view!=="feed" && S.posts.some(p=>p.user_id!==S.uid && p.created_at>(seen.feed||""));
+  const newFriends=[...m].filter(id=>(S.friendSince||{})[id]>(seen.friends||""));
+  const newRequests=[...S.inc].filter(id=>!S.out.has(id) && (S.friendSince||{})[id]>(seen.friends||""));
+  S.dotFriends = S.view!=="friends" && (newFriends.length+newRequests.length)>0;
+  // Once per visit, say who's new.
+  if(newFriends.length && S.view!=="friends" && !S.toldFriends){ S.toldFriends=true;
+    const names=newFriends.map(id=>firstName(id)); toast(names.length===1?`You and ${names[0]} are now friends 💛`:`${names.length} new friends on WearAbout 💛`); }
+  renderTabs();
 }
 
 /* ---------- streak ---------- */
@@ -251,7 +276,8 @@ function softRender(views){
 function renderTabs(){
   const homeish=["home","fit","flow","share"].includes(S.view);
   const on=id=>id==="home"?homeish:id==="closet"?["closet","item"].includes(S.view):S.view===id;
-  const t=(id,label,icon)=>`<button class="tab ${on(id)?"on":""}" data-act="nav" data-view="${id}" aria-current="${on(id)?"page":"false"}">${icon}<span>${label}</span></button>`;
+  const dot=id=>(id==="feed"&&S.dotFeed)||(id==="friends"&&S.dotFriends);
+  const t=(id,label,icon)=>`<button class="tab ${on(id)?"on":""}" data-act="nav" data-view="${id}" aria-current="${on(id)?"page":"false"}" ${dot(id)?`aria-label="${label}, something new"`:""}>${icon}<span>${label}</span>${dot(id)?`<i class="tabdot" aria-hidden="true"></i>`:""}</button>`;
   setHTML($("#tabs"), t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Ideas",ICON.bulb)+t("friends","Friends",ICON.people)+t("closet","Closet",ICON.closet));
 }
 
@@ -738,11 +764,63 @@ function viewFriends(){
         <div class="row" style="flex-wrap:nowrap"><input class="input" id="phoneIn" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(S.phoneIn ?? S.myPhone)}" placeholder="(555) 123-4567"><button class="btn sm" data-act="savePhone">Save</button></div>
         <p class="small muted">Used only when you invite friends to chat about a fit. Only mutual friends can see it.${S.myPhone?` <button class="link small" data-act="removePhone">Remove my number</button>`:""}</p></div>`:""}
     </div>
+    ${S.notifyReady?notifyPanel():""}
     ${avatarSheet()}
     <p class="small muted" style="text-align:center">Signed in as ${esc(S.email)}</p>
     <button class="btn ghost sm signout" data-act="signOut">Sign out</button>
   </div>`;
 }
+/* --- phone notifications --- */
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone===true;
+function notifyPanel(){
+  if(!S.pushState){ S.pushState="checking"; checkPush(); } const st=S.pushState;
+  let main;
+  if(!pushSupported()) main = isIOS()&&!standalone()
+    ? `<p class="small muted">To get notifications on iPhone, open WearAbout from its Home Screen icon (Share › Add to Home Screen), then turn them on here.</p>`
+    : `<p class="small muted">This browser can't show notifications.</p>`;
+  else if(st==="denied") main=`<p class="small muted">Notifications are blocked for WearAbout. Turn them on in your phone's Settings › Notifications › WearAbout.</p>`;
+  else if(st==="on") main=`<div class="row"><span class="small">🔔 Notifications are on for this phone.</span><span class="spacer"></span><button class="link small" data-act="pushOff">Turn off</button></div>`;
+  else main=`<p class="small muted">Get a heads-up when friends post or join.</p><button class="btn sm primary" data-act="pushOn" ${S.pushBusy?"disabled":""}>${S.pushBusy?"Turning on…":"Turn on notifications"}</button>`;
+  const sw=(id,label,on)=>`<label class="switchrow" for="${id}"><span><b>${label}</b></span><input type="checkbox" id="${id}" class="switch" role="switch" ${on?"checked":""}></label>`;
+  return `<div class="panel"><h3>Notifications</h3>${main}
+    ${st==="on"?sw("notifyPosts","Friend posts",S.notify.posts)+sw("notifyFriends","New friends",S.notify.friends):""}
+    <p class="small muted">At most one per friend a day. In the app, a dot on Feed and Friends shows what's new.</p></div>`;
+}
+async function checkPush(){
+  if(!pushSupported()){ S.pushState="unsupported"; return; }
+  if(Notification.permission==="denied"){ S.pushState="denied"; softRender(["friends"]); return; }
+  try { const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); S.pushState=sub?"on":"off"; }
+  catch { S.pushState="off"; }
+  softRender(["friends"]);
+}
+async function pushOn(){
+  if(S.pushBusy) return; S.pushBusy=true; render();
+  try {
+    const perm=await Notification.requestPermission();
+    if(perm!=="granted"){ S.pushState=perm==="denied"?"denied":"off"; return; }
+    const { key } = await callFn("wear-about",{action:"pushkey"});
+    const reg=await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:Uint8Array.from(atob(key.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((key.length+3)%4)),c=>c.charCodeAt(0)) });
+    const j=sub.toJSON();
+    const { error } = await sb.from("push_subs").upsert({ endpoint:j.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth });
+    if(error) throw error;
+    S.pushState="on"; toast("Notifications on 🔔");
+  } catch(e){ console.error(e); toast("Couldn't turn on notifications. Try again."); }
+  finally { S.pushBusy=false; render(); }
+}
+async function pushOff(){
+  try { const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription();
+    if(sub){ await sb.from("push_subs").delete().eq("endpoint",sub.endpoint); await sub.unsubscribe(); } } catch(e){ console.error(e); }
+  S.pushState="off"; render(); toast("Notifications off for this phone");
+}
+async function setNotify(kind,on){
+  const prev=S.notify[kind]; S.notify[kind]=on; render();
+  const { error } = await sb.from("user_settings").upsert({user_id:S.uid, [kind==="posts"?"notify_posts":"notify_friends"]:on, updated_at:new Date().toISOString()});
+  if(error){ S.notify[kind]=prev; render(); toast("Couldn't save that. Try again."); }
+}
+
 /* --- profile photo --- */
 // Pick a photo (or one of your fits), drag and zoom to frame your face in the circle, save.
 function avatarSheet(){
@@ -1218,7 +1296,7 @@ document.addEventListener("touchend",()=>{
 
 /* ---------- actions ---------- */
 const ACT = {
-  nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
+  nav:t=>{ S.view=t.dataset.view; if(S.view==="feed"){ seenSet("feed"); S.dotFeed=false; } if(S.view==="friends"){ seenSet("friends"); S.dotFriends=false; } S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
     if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
   log:()=>{ S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
   changePhoto:()=>{ S.replacing=true; const i=$("#photoIn"); i.value=""; i.click(); },
@@ -1270,6 +1348,8 @@ const ACT = {
     sb.storage.from("fits").remove([x.image_path,x.thumb_path,x.orig_path].filter(Boolean));
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
+  pushOn:()=>pushOn(),
+  pushOff:()=>pushOff(),
   avatarPick:()=>{ const i=$("#avatarIn"); i.value=""; i.click(); },
   avatarFromFits:()=>{ S.avatarEdit={choosing:true}; render(); },
   avatarFit:async t=>{ const f=S.fits.find(x=>x.id===t.dataset.id); if(!f) return;
@@ -1360,6 +1440,8 @@ document.addEventListener("change", e=>{
   else if(t.dataset.itemType!=null){ curFit().items[t.dataset.itemType].type=t.value; S.itemsDirty=true; const b=$("#saveItemsBtn"); if(b) b.hidden=false; }
   else if(t.id==="keepBg"&&S.flow){ S.flow.keepBg=t.checked; render(); }
   else if(t.id==="buyRecs") setBuyRecs(t.checked);
+  else if(t.id==="notifyPosts") setNotify("posts",t.checked);
+  else if(t.id==="notifyFriends") setNotify("friends",t.checked);
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
   else if(t.id==="chatOn"&&S.share){ S.share.chat=t.checked; render(); }
   else if(t.dataset.plugOn!=null&&S.share){ const i=t.dataset.plugOn;   // one piece per post: picking another switches to it
@@ -1375,11 +1457,11 @@ async function onSession(session){
   S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home"; S.socialAt=0; S.mineAt=0;
   // Switching accounts: nothing typed or loaded for the last person carries over.
   Object.assign(S,{flow:null, share:null, fitId:null, itemId:null, hearts:{}, phones:{}, myPhone:"", chatReady:false, palettes:{}, swatchSeen:{}, codeIn:"", handleIn:null, phoneIn:null, friendMsg:"",
-    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, avatarEdit:null, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
+    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, avatarEdit:null, dotFeed:false, dotFriends:false, toldFriends:false, friendSince:{}, pushState:null, notifyReady:false, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
   if(!uid){ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); return; }
   render();
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
-  S.loaded=true; render();
+  S.loaded=true; if(START_VIEW && !S.startedFromLink){ S.startedFromLink=true; S.view=START_VIEW; seenSet(START_VIEW); } render();
   backfillCloset().then(()=>softRender(["closet","item","fit"])).then(()=>fillCloseups()).catch(console.error);
   loadSocial().then(()=>acceptInvite()).then(()=>softRender(["feed","friends"])).catch(console.error);
 }
@@ -1400,7 +1482,11 @@ async function acceptInvite(){
     toast(S.inc.has(hit.id) ? `You and ${hit.handle||"your friend"} are now friends` : `You added ${hit.handle||"your friend"}. Once they add you back, you'll see each other's fits.`);
   } catch(e){ console.error("invite",e); }
 }
-if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+  // A notification tapped while the app is already open: jump to that screen.
+  navigator.serviceWorker.addEventListener("message", e=>{ const g=e.data&&e.data.go; if(S.uid && ["feed","friends"].includes(g)){ S.view=g; seenSet(g); S.share=null; S.flow=null; render(); scrollTo(0,0); loadSocial().then(()=>softRender([g])).catch(()=>{}); } });
+}
 if(sb){
   sb.auth.onAuthStateChange((_ev,session)=>{ setTimeout(()=>onSession(session),0); });
   sb.auth.getSession().then(({data})=>onSession(data.session));

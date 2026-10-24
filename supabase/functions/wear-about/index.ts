@@ -210,6 +210,120 @@ async function backdrop(key: string, image: string, mode: string, category: stri
   });
 }
 
+/* ------------------------------------------------------------------ notifications (Web Push) */
+// Standard Web Push (RFC 8291 encryption, RFC 8292 VAPID signing) with the built-in Web Crypto API.
+// The app's signing key is created here on first use and kept in app_keys, so there's no key to set up by hand.
+
+const enc = new TextEncoder();
+const b64u = (buf: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+const concat = (...parts: Uint8Array[]): Uint8Array<ArrayBuffer> => { const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; };
+async function hmac(key: BufferSource, data: BufferSource) {
+  const k = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", k, data));
+}
+
+type Vapid = { publicKey: string; privateJwk: JsonWebKey };
+// deno-lint-ignore no-explicit-any
+async function vapidKeys(admin: any): Promise<Vapid> {
+  const { data } = await admin.from("app_keys").select("value").eq("name", "vapid").maybeSingle();
+  if (data?.value?.publicKey) return data.value as Vapid;
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]) as CryptoKeyPair;
+  const value: Vapid = { publicKey: b64u(await crypto.subtle.exportKey("raw", pair.publicKey)), privateJwk: await crypto.subtle.exportKey("jwk", pair.privateKey) };
+  // If two requests race, the first saved key wins and both use it.
+  await admin.from("app_keys").upsert({ name: "vapid", value }, { onConflict: "name", ignoreDuplicates: true });
+  const again = await admin.from("app_keys").select("value").eq("name", "vapid").maybeSingle();
+  return (again.data?.value as Vapid) ?? value;
+}
+
+async function vapidHeader(endpoint: string, v: Vapid) {
+  const aud = new URL(endpoint).origin, exp = Math.floor(Date.now() / 1000) + 12 * 3600;
+  const unsigned = `${b64u(enc.encode(JSON.stringify({ typ: "JWT", alg: "ES256" })))}.${b64u(enc.encode(JSON.stringify({ aud, exp, sub: "mailto:hello@wearabout.app" })))}`;
+  const key = await crypto.subtle.importKey("jwk", v.privateJwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, enc.encode(unsigned));
+  return `vapid t=${unsigned}.${b64u(sig)}, k=${v.publicKey}`;
+}
+
+// Encrypt a payload for one subscription (aes128gcm content coding).
+export async function encryptPush(payload: Uint8Array, p256dh: string, authSecret: string) {
+  const uaPublic = unb64u(p256dh), auth = unb64u(authSecret);
+  const local = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]) as CryptoKeyPair;
+  const asPublic = new Uint8Array(await crypto.subtle.exportKey("raw", local.publicKey));
+  const uaKey = await crypto.subtle.importKey("raw", uaPublic, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey }, local.privateKey, 256));
+  const prkKey = await hmac(auth, shared);
+  const ikm = await hmac(prkKey, concat(enc.encode("WebPush: info\0"), uaPublic, asPublic, new Uint8Array([1])));
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const prk = await hmac(salt, ikm);
+  const cek = (await hmac(prk, concat(enc.encode("Content-Encoding: aes128gcm\0"), new Uint8Array([1])))).slice(0, 16);
+  const nonce = (await hmac(prk, concat(enc.encode("Content-Encoding: nonce\0"), new Uint8Array([1])))).slice(0, 12);
+  const aes = await crypto.subtle.importKey("raw", cek, { name: "AES-GCM" }, false, ["encrypt"]);
+  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, aes, concat(payload, new Uint8Array([2]))));
+  const rs = new Uint8Array([0, 0, 16, 0]);   // record size 4096
+  return concat(salt, rs, new Uint8Array([asPublic.length]), asPublic, sealed);
+}
+
+// deno-lint-ignore no-explicit-any
+async function sendPush(admin: any, v: Vapid, sub: { endpoint: string; p256dh: string; auth: string }, msg: { title: string; body: string; url: string }) {
+  try {
+    const body = await encryptPush(enc.encode(JSON.stringify(msg)), sub.p256dh, sub.auth);
+    const res = await fetch(sub.endpoint, { method: "POST", body, headers: {
+      "Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream", TTL: "86400", Urgency: "normal",
+      Authorization: await vapidHeader(sub.endpoint, v) } });
+    if (res.status === 404 || res.status === 410) await admin.from("push_subs").delete().eq("endpoint", sub.endpoint);   // phone turned it off
+    else if (!res.ok) console.error("push", res.status, (await res.text()).slice(0, 200));
+  } catch (e) { console.error("push", String(e)); }
+}
+
+const OCC_WORD: Record<string, string> = { "Casual/Hangout": "", "Active/Workout": "workout ", "Beach/Resort": "beach ", "Get Fancy": "dressed-up ", "Travel Day": "travel ", "Work Event": "work event ", "Night Out": "night out ", "Errands": "", "WFH": "WFH ", "Office": "office ", "Festival": "festival " };
+
+// Called by the database (see 008_notifications.sql) when a post or friendship is added.
+// It only trusts what it re-reads from the database, and each person gets at most one per friend, per kind, per day.
+// deno-lint-ignore no-explicit-any
+async function handleNotify(admin: any, body: any) {
+  const rec = body?.record ?? {};
+  const recent = (ts: string) => ts && Date.now() - new Date(ts).getTime() < 10 * 60e3;
+  let sender = "", recipients: string[] = [], kind = "", msg = { title: "WearAbout", body: "", url: "./" };
+
+  if (body.table === "posts" && rec.id) {
+    const { data: post } = await admin.from("posts").select("id,user_id,category,created_at").eq("id", rec.id).maybeSingle();
+    if (!post || !recent(post.created_at)) return json(200, { ok: true });
+    sender = post.user_id; kind = "post";
+    const [{ data: out }, { data: inc }] = await Promise.all([
+      admin.from("friendships").select("friend_id").eq("user_id", sender),
+      admin.from("friendships").select("user_id").eq("friend_id", sender),
+    ]);
+    const back = new Set((inc ?? []).map((r: { user_id: string }) => r.user_id));
+    recipients = (out ?? []).map((r: { friend_id: string }) => r.friend_id).filter((id: string) => back.has(id));
+    const { data: p } = await admin.from("profiles").select("handle").eq("id", sender).maybeSingle();
+    msg = { title: `${p?.handle || "A friend"} just posted`, body: `New ${OCC_WORD[post.category] ?? ""}fit on WearAbout ${({ "Night Out": "🌙", "Festival": "🎪", "Travel Day": "✈️", "Beach/Resort": "🏖️" } as Record<string, string>)[post.category] ?? "💛"}`, url: "./?go=feed" };
+  } else if (body.table === "friendships" && rec.user_id && rec.friend_id) {
+    // Tell the other person once the friendship is mutual.
+    const { data: rows } = await admin.from("friendships").select("user_id,friend_id,created_at")
+      .or(`and(user_id.eq.${rec.user_id},friend_id.eq.${rec.friend_id}),and(user_id.eq.${rec.friend_id},friend_id.eq.${rec.user_id})`);
+    if ((rows ?? []).length < 2 || !(rows ?? []).some((r: { created_at: string }) => recent(r.created_at))) return json(200, { ok: true });
+    sender = rec.user_id; recipients = [rec.friend_id]; kind = "friend";
+    const { data: p } = await admin.from("profiles").select("handle").eq("id", sender).maybeSingle();
+    msg = { title: "New friend on WearAbout", body: `You and ${p?.handle || "a friend"} are now friends 💛`, url: "./?go=friends" };
+  } else return json(200, { ok: true });
+
+  if (!recipients.length) return json(200, { ok: true });
+  // Respect each person's switches.
+  const { data: prefs } = await admin.from("user_settings").select(`user_id,${kind === "post" ? "notify_posts" : "notify_friends"}`).in("user_id", recipients);
+  const off = new Set((prefs ?? []).filter((r: Record<string, unknown>) => r[kind === "post" ? "notify_posts" : "notify_friends"] === false).map((r: { user_id: string }) => r.user_id));
+  recipients = recipients.filter((id) => !off.has(id));
+  if (!recipients.length) return json(200, { ok: true });
+  // One per friend, per kind, per day: only the rows that are new get a notification.
+  const { data: fresh } = await admin.from("push_log").upsert(recipients.map((r) => ({ recipient: r, sender, kind })), { onConflict: "recipient,sender,kind,day", ignoreDuplicates: true }).select("recipient");
+  const send = new Set((fresh ?? []).map((r: { recipient: string }) => r.recipient));
+  if (!send.size) return json(200, { ok: true });
+  const { data: subs } = await admin.from("push_subs").select("endpoint,p256dh,auth,user_id").in("user_id", [...send]);
+  if (!(subs ?? []).length) return json(200, { ok: true });
+  const v = await vapidKeys(admin);
+  await Promise.all((subs ?? []).map((s: { endpoint: string; p256dh: string; auth: string }) => sendPush(admin, v, s, msg)));
+  return json(200, { ok: true, sent: (subs ?? []).length });
+}
+
 /* ------------------------------------------------------------------ request handling */
 
 Deno.serve(async (req) => {
@@ -219,12 +333,16 @@ Deno.serve(async (req) => {
   // Only signed-in WearAbout users can spend the AI credit.
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  type Body = { action?: string; image?: string; mode?: string; category?: string; detail?: string; goal?: string; buy?: boolean; closet?: { id?: string; label?: string; type?: string }[] };
+  type Body = { action?: string; table?: string; record?: Record<string, unknown>; image?: string; mode?: string; category?: string; detail?: string; goal?: string; buy?: boolean; closet?: { id?: string; label?: string; type?: string }[] };
   // Check the sign-in and read the photo at the same time.
   const [auth, body] = await Promise.all([
     token ? admin.auth.getUser(token) : Promise.resolve({ data: { user: null } }),
     req.json().catch(() => null) as Promise<Body | null>,
   ]);
+  // Notifications: the database pings us; we re-check everything ourselves before sending.
+  if (body?.action === "notify") return handleNotify(admin, body);
+  // The public half of the notification key, for the app to subscribe with.
+  if (body?.action === "pushkey") return json(200, { key: (await vapidKeys(admin)).publicKey });
   const user = auth.data.user;
   if (!user) return json(401, { error: "Sign in again." });
   if (!body) return json(400, { error: "Bad request." });
