@@ -143,7 +143,7 @@ function render(){
   if(!signedIn){ m.innerHTML=viewAuth(); return; }
   renderTabs();
   const v=S.view;
-  m.innerHTML = v==="flow"?viewFlow() : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
+  m.innerHTML = v==="flow"?(S.flow&&S.flow.step==="result"?viewResult():viewFlow()) : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
   if(v==="share") drawShare();
 }
 function softRender(views){
@@ -254,14 +254,38 @@ function viewFlow(){
       <div><h2>${f.keepBg?"Your fit":"Pick a backdrop"}</h2><p class="small muted">${CAT_EMOJI[f.cat]||""} ${esc(f.cat)}${f.detail?" · "+esc(f.detail):""}</p></div>
       <div class="bgpick" style="grid-template-columns:repeat(${tiles.length},minmax(0,1fr))${f.keepBg?";max-width:300px":""}">${tiles.map(([k,l])=>bgTile(k,l)).join("")}</div>
       ${bgStatus}
-      <div class="status"><span class="dot ${a==="loading"?"live":a&&a.score!=null?"ok":""}"></span>
-        <span>${a==="loading"?"Scoring your fit and picking recs…":a&&a.score!=null?"Score and recs ready.":"Couldn't score this fit: "+esc(f.analysisErr||"")}</span>
-        ${a&&a!=="loading"&&a.score==null?`<button class="link" data-act="retryAnalysis">Try again</button>`:""}</div>
-      ${(()=>{ const ok=f.bg&&f.comps[f.bg]&&a!=="loading"&&!f.saving; return `<div class="savebar"><button class="btn primary" data-act="saveFit" ${ok?"":"disabled"}>${f.saving&&!f.shareAfter?"Saving…":"Save"}</button><button class="btn" data-act="saveShare" ${ok?"":"disabled"}>${f.saving&&f.shareAfter?"Saving…":"Save & share"}</button></div>`; })()}
-      ${a&&a!=="loading"&&a.score==null?`<p class="small muted">You can save without a score. It still counts for your streak.</p>`:""}
+      <button class="btn primary block" data-act="reveal" ${f.bg&&f.comps[f.bg]?"":"disabled"}>Reveal my score</button>
     </div>`;
   }
   return out;
+}
+function viewResult(){
+  const f=S.flow, a=f.analysis, ok=f.bg&&f.comps[f.bg]&&a!=="loading"&&!f.saving;
+  let out=`<button class="back" data-act="backToBackdrop">${ICON.back} ${f.keepBg?"Back":"Change backdrop"}</button><div class="stack" style="gap:18px">
+    <img class="fitimg" src="${f.comps[f.bg].url}" alt="Your fit">
+    <span class="cpill" style="align-self:flex-start">${CAT_EMOJI[f.cat]||""} ${esc(f.cat)}${f.detail?" · "+esc(f.detail):""}</span>`;
+  if(a==="loading") out+=`<div class="status"><span class="dot live"></span><span>Scoring your fit and picking recs…</span></div>`;
+  else if(!a||a.score==null) out+=`<div class="note plain">Couldn't score this fit: ${esc(f.analysisErr||"")} <button class="link" data-act="retryAnalysis">Try again</button><br><span class="small">You can still save it. It counts for your streak.</span></div>`;
+  else out+=scoreBlock(a, a.score, f.cat, f.recFb||{}, "flowRecFb");
+  out+=`<div class="savebar"><button class="btn primary" data-act="saveFit" ${ok?"":"disabled"}>${f.saving&&!f.shareAfter?"Saving…":"Save"}</button><button class="btn" data-act="saveShare" ${ok?"":"disabled"}>${f.saving&&f.shareAfter?"Saving…":"Save & share"}</button></div></div>`;
+  return out;
+}
+// Score, badges, review, a one-line breakdown that expands, and the two recs.
+function scoreBlock(an, score, cat, fb, recAct){
+  const dims=dimsFor(an.goal).filter(([k])=>an.dims[k]);
+  const name=k=>k==="goal"?"Your goal":(dims.find(d=>d[0]===k)||[,k])[1];
+  const best=dims.reduce((m,d)=>!m||an.dims[d[0]].score>an.dims[m].score?d[0]:m,null);
+  const low=an.low&&an.dims[an.low]?an.low:null;
+  const line=[best?`Strongest: <b>${esc(name(best))} ${Number(an.dims[best].score).toFixed(1)}</b>`:"", low&&low!==best?`Room to grow: <b>${esc(name(low))} ${Number(an.dims[low].score).toFixed(1)}</b>`:""].filter(Boolean).join(" · ");
+  return `<div class="scoreRow"><div class="score">${fmtScore(score)}<small>/10</small></div><div class="small muted" style="padding-bottom:6px">${score>=BEST?"⭐ In your Best fits":"Style score for "+esc(cat)}<br>Only you see this.</div></div>
+    ${badgeChips(an.badges)}
+    ${an.review?`<p class="review">${esc(an.review)}</p>`:""}
+    <details class="dimswrap"><summary><span class="small">${line}</span><span class="link small">See full breakdown</span></summary>
+      <div class="dims">${dims.map(([k,label,w])=>{ const d=an.dims[k]; if(k==="goal") label="Your goal: "+esc(an.goal); return `<div class="dim ${an.low===k?"low":""}"><div class="lbl"><span>${label}<em>${Math.round(w*100)}%</em></span><span>${Number(d.score).toFixed(1)}</span></div><div class="bar"><i style="width:${d.score*10}%"></i></div>${d.note?`<p>${esc(d.note)}</p>`:""}</div>`; }).join("")}</div></details>
+    <div class="stack" style="gap:12px"><h3>Level it up</h3>
+      ${an.tweak?recCard("tweak","Tweak",an.tweak.title,an.tweak.detail,fb.tweak,recAct):""}
+      ${an.buy?recCard("buy","Buy",an.buy.item,an.buy.why,fb.buy,recAct):`<div class="rec"><span class="kind">Buy</span><b>No need to buy anything for this look!</b></div>`}
+    </div>`;
 }
 function bgTile(key,label){
   const f=S.flow, c=f.comps[key], st=f.compState[key];
@@ -313,11 +337,13 @@ async function saveFit(share=false){
     await Promise.all([up(base+".jpg",main), up(base+"-thumb.jpg",thumb), sameAsOrig?null:up(base+"-orig.jpg",f.origBlob)]);
     const row={id, local_date:localDate(), category:f.cat, detail:f.detail||"", bg_choice:f.bg,
       image_path:base+".jpg", thumb_path:base+"-thumb.jpg", orig_path:sameAsOrig?base+".jpg":base+"-orig.jpg",
-      score:a?a.score:null, analysis:a?{dims:a.dims,low:a.low,review:a.review,tweak:a.tweak,buy:a.buy,badges:a.badges||[],goal:a.goal||""}:null, items:a?a.items:[]};
+      score:a?a.score:null, analysis:a?{dims:a.dims,low:a.low,review:a.review,tweak:a.tweak,buy:a.buy,badges:a.badges||[],goal:a.goal||""}:null, items:a?a.items:[],
+      rec_fb:a?(f.recFb||{}):{}};
     row.items = await linkItems(row.items);
     const { data, error } = await sb.from("fits").insert(row).select().single();
     if(error) throw error;
     S.urls["fits:"+row.image_path]=f.comps[f.bg].url; S.urls["fits:"+row.thumb_path]=URL.createObjectURL(thumb);
+    for(const kind of ["tweak","buy"]) if(a && (f.recFb||{})[kind]==="up") await saveIdea(data, kind).catch(console.error);
     S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
     const n=streakInfo().n; toast(n>1?`Saved to your Fits · ${n}-day streak`:"Saved to your Fits · streak started");
     if(share) await openShare();
@@ -334,14 +360,7 @@ function viewFit(){
     <img class="fitimg" src="${esc(url("fits",x.image_path)||url("fits",x.thumb_path))}" alt="${esc(x.category)} fit">
     <div class="row"><span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}${x.detail?" · "+esc(x.detail):""}</span><span class="spacer"></span><span class="small muted">${new Date(x.created_at).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}</span></div>`;
   if(x.score!=null && an){
-    out+=`<div class="scoreRow"><div class="score">${fmtScore(x.score)}<small>/10</small></div><div class="small muted" style="padding-bottom:6px">${x.score>=BEST?"⭐ In your Best fits":"Style score for "+esc(x.category)}<br>Only you see this.</div></div>
-      ${badgeChips(an.badges)}
-      ${an.review?`<p class="review">${esc(an.review)}</p>`:""}
-      <div class="dims">${dimsFor(an.goal).map(([k,label,w])=>{ const d=an.dims[k]; if(!d) return ""; if(k==="goal") label="Your goal: "+esc(an.goal); return `<div class="dim ${an.low===k?"low":""}"><div class="lbl"><span>${label}<em>${Math.round(w*100)}%</em></span><span>${Number(d.score).toFixed(1)}</span></div><div class="bar"><i style="width:${d.score*10}%"></i></div>${d.note?`<p>${esc(d.note)}</p>`:""}</div>`; }).join("")}</div>
-      <div class="stack" style="gap:12px"><h3>Level it up</h3>
-        ${an.tweak?recCard("tweak","Tweak",an.tweak.title,an.tweak.detail,fb.tweak):""}
-        ${an.buy?recCard("buy","Buy",an.buy.item,an.buy.why,fb.buy):`<div class="rec"><span class="kind">Buy</span><b>No need to buy anything for this look!</b></div>`}
-      </div>`;
+    out+=scoreBlock(an, x.score, x.category, fb, "recFb");
   } else out+=`<div class="note plain">This fit was saved without a score.</div>`;
   out+=`<div class="stack" style="gap:10px"><div class="row"><h3>In this outfit</h3><span class="spacer"></span><span class="small muted">Jewelry not listed</span></div>
     <div class="items">${(x.items||[]).map((it,i)=>`<div class="item">
@@ -355,15 +374,23 @@ function viewFit(){
   </div>`;
   return out;
 }
-function recCard(kind,label,title,detail,state){
+function recCard(kind,label,title,detail,state,act="recFb"){
   return `<div class="rec"><span class="kind">${label}</span><b>${esc(title)}</b>${detail?`<p class="small muted">${esc(detail)}</p>`:""}
-    <div class="acts"><button class="iconbtn ${state==="up"?"on":""}" data-act="recFb" data-kind="${kind}" data-val="up" aria-label="Save this rec" aria-pressed="${state==="up"}">${state==="up"?ICON.heartFill:ICON.heart}</button>
-    <button class="iconbtn ${state==="down"?"off":""}" data-act="recFb" data-kind="${kind}" data-val="down" aria-label="Not for me" aria-pressed="${state==="down"}">${ICON.x}</button>
-    ${state==="up"?`<span class="small muted" style="align-self:center">Added to Ideas</span>`:""}</div></div>`;
+    <div class="acts"><button class="iconbtn ${state==="up"?"on":""}" data-act="${act}" data-kind="${kind}" data-val="up" aria-label="Save this rec" aria-pressed="${state==="up"}">${state==="up"?ICON.heartFill:ICON.heart}</button>
+    <button class="iconbtn ${state==="down"?"off":""}" data-act="${act}" data-kind="${kind}" data-val="down" aria-label="Not for me" aria-pressed="${state==="down"}">${ICON.x}</button>
+    ${state==="up"?`<span class="small muted" style="align-self:center">${act==="flowRecFb"?"Goes to Ideas when you save":"Added to Ideas"}</span>`:""}</div></div>`;
 }
 async function openFit(id, from="home"){
   S.fitBack=from; S.fitId=id; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
   const x=curFit(); if(x && !url("fits",x.image_path)){ await signUrls("fits",[x.image_path]); if(S.fitId===id && S.view==="fit") render(); }
+}
+function ideaFor(x,kind){
+  const an=x.analysis;
+  return kind==="buy" ? {title:an.buy.item, detail:an.buy.why, query:an.buy.search} : {title:an.tweak.title, detail:an.tweak.detail, query:an.tweak.title+" outfit styling"};
+}
+async function saveIdea(x,kind){
+  const { data, error } = await sb.from("saved_recs").upsert({fit_id:x.id, kind, category:x.category, ...ideaFor(x,kind)},{onConflict:"fit_id,kind"}).select().single();
+  if(error) throw error; S.recs=[data,...S.recs.filter(z=>z.id!==data.id)];
 }
 async function recFeedback(kind,val){
   const x=curFit(); if(!x||!x.analysis) return;
@@ -371,9 +398,7 @@ async function recFeedback(kind,val){
   try {
     const r1=await sb.from("fits").update({rec_fb:x.rec_fb}).eq("id",x.id); if(r1.error) throw r1.error;
     if(next==="up"){
-      const an=x.analysis, r = kind==="buy" ? {title:an.buy.item, detail:an.buy.why, query:an.buy.search} : {title:an.tweak.title, detail:an.tweak.detail, query:an.tweak.title+" outfit styling"};
-      const { data, error } = await sb.from("saved_recs").upsert({fit_id:x.id, kind, category:x.category, ...r},{onConflict:"fit_id,kind"}).select().single();
-      if(error) throw error; S.recs=[data,...S.recs.filter(z=>z.id!==data.id)]; toast("Added to Ideas");
+      await saveIdea(x,kind); toast("Added to Ideas");
     } else {
       await sb.from("saved_recs").delete().eq("fit_id",x.id).eq("kind",kind);
       S.recs=S.recs.filter(z=>!(z.fit_id===x.id&&z.kind===kind));
@@ -671,6 +696,9 @@ const ACT = {
   saveFit:()=>saveFit(false),
   saveShare:()=>saveFit(true),
   recFb:t=>recFeedback(t.dataset.kind,t.dataset.val),
+  flowRecFb:t=>{ const f=S.flow; if(!f) return; const k=t.dataset.kind, v=t.dataset.val; f.recFb={...(f.recFb||{}),[k]:(f.recFb||{})[k]===v?null:v}; render(); },
+  reveal:()=>{ const f=S.flow; if(!f) return; f.step="result"; render(); scrollTo(0,0); },
+  backToBackdrop:()=>{ const f=S.flow; if(!f) return; f.step="style"; render(); scrollTo(0,0); },
   addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null,clear:true}]; render(); $("#saveItemsBtn").hidden=false; const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
   removeItem:t=>{ const x=curFit(); x.items=x.items.filter((_,i)=>i!=t.dataset.i); render(); $("#saveItemsBtn").hidden=false; },
   saveItems:async()=>{ const x=curFit(); x.items=(x.items||[]).filter(i=>i.label.trim()).map(i=>({...i,label:i.label.trim()}));
