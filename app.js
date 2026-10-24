@@ -333,7 +333,7 @@ function goalRow(){
   return `<div class="goalrow">🧭 <span>${S.goal?`Style goal: <b>${esc(S.goal)}</b>`:"Add a style goal to your score"}</span><button class="link small" data-act="editGoal">${S.goal?"Edit":"Set one"}</button></div>`;
 }
 /* --- getting people to the first fit and the first post (no names: people may not set a real one) --- */
-const FIRST_FIT_LINES = ["Your closet’s waiting. Show us today’s look.","Don’t be shy. Flaunt it.","Mirror selfie? Perfect. That’s all it takes.","Day one of your streak is one photo away."];
+const FIRST_FIT_LINES = ["What are you wearing today? Show us.","Don’t be shy. Flaunt it.","Mirror selfie? Perfect. That’s all it takes.","Day one of your streak is one photo away."];
 const pick = (list, key) => list[(S.pickSeed ?? (S.pickSeed=Math.floor(Math.random()*1000)) ) % list.length];
 function firstPostLine(){
   const friendPosted=S.posts.some(p=>p.user_id!==S.uid);
@@ -357,7 +357,9 @@ function viewHome(){
   const title = st.n ? `🔥 ${st.n}-day streak` : "Log today's fit";
   const sub = st.loggedToday ? "Today's fit is in. Add another anytime." : st.n ? "Keep your streak alive — what are you wearing?" : "Start your streak — what are you wearing?";
   if(S.loaded && !S.fits.length && !S.welcomeSkipped) return welcomeCard();
-  let out=(S.loaded && S.fits.length && mutual().length && neverPosted() && !S.nudgeDismissed ? firstPostCard() : "")+`<button class="logbanner" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
+  const nudge = S.loaded && S.fits.length && mutual().length && neverPosted() && !S.nudgeDismissed;
+  // Right after a save, let the save message have the moment; the nudge shows next time you're here.
+  let out=(nudge && Date.now()>(S.nudgeAfter||0) ? firstPostCard() : "")+`<button class="logbanner" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
     <div class="countrow"><span class="count">${S.fits.length}</span><span class="countlbl">Outfit${S.fits.length===1?"":"s"} logged</span></div>
     ${goalRow()}
     <div class="chips" role="toolbar" aria-label="Filters" style="margin-top:12px">
@@ -517,17 +519,18 @@ async function saveFit(share=false){
     Promise.all(["tweak","buy"].filter(kind=>a && (f.recFb||{})[kind]==="up").map(kind=>saveIdea(data, kind).catch(console.error)))
       .then(()=>softRender(["saved"]));
     // Land on Fits so you see the new card at the top and the streak go up. Clear filters so it's visible.
+    S.nudgeAfter = Date.now()+6000;   // let the save message have the moment before any share nudge
     S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.confirmDel=false;
     if(!share){ S.view="home"; S.filter={cat:null,best:false}; S.justSaved=id; render(); scrollTo(0,0); S.justSaved=null; }
     const n=streakInfo().n, newNote=added?` · ${added} new piece${added===1?"":"s"} in your Closet`:"";
     const savedMsg=(n>1?`Saved · ${n}-day streak`:"Saved · streak started")+newNote;
-    const firstFit = S.fits.length===1;
+    const firstFit = S.fits.length===1, nudging = mutual().length && neverPosted() && !S.nudgeDismissed;
     if(firstFit) celebrate();
     // Sharing: hold the message until you post or back out, so it never sits on top of the share screen.
     if(!share){
       if(firstFit) toast("🎉 First fit logged · welcome to WearAbout!");
       // A strong score and friends to show: offer to share right then.
-      else if(a && a.score>=7.5 && mutual().length) toast(savedMsg+" · love this one?", ()=>{ S.fitId=id; S.shareBack="home"; return openShare(main); }, "Share it");
+      else if(a && a.score>=7.5 && mutual().length && !nudging) toast(savedMsg+" · love this one?", ()=>{ S.fitId=id; S.shareBack="home"; return openShare(main); }, "Share it");
       else toast(savedMsg);
     }
     else { S.shareBack="home"; S.savedMsg=savedMsg; await openShare(main);
