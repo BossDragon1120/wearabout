@@ -120,9 +120,10 @@ async function callFn(name, payload, asBlob=false){
     throw new Error((msg||"Something went wrong. Try again.")+` (code ${res.status})`); }
   return asBlob ? res.blob() : res.json();
 }
+// Photo links are signed for 6 hours; start fresh after 5 so a long-open app never shows broken images.
+function freshUrls(){ if(S.urlsAt && Date.now()-S.urlsAt <= 5*3600e3) return false; S.urls={}; S.urlsAt=Date.now(); S.socialAt=0; S.palettes={}; return true; }
 async function loadMine(){
-  // Photo links are signed for 6 hours; start fresh after 5 so a long-open app never shows broken images.
-  if(!S.urlsAt || Date.now()-S.urlsAt > 5*3600e3){ S.urls={}; S.urlsAt=Date.now(); }
+  freshUrls();
   const [f,r,p,g,c,ph] = await Promise.all([
     sb.from("fits").select("*").order("created_at",{ascending:false}).limit(1000),
     sb.from("saved_recs").select("*").order("created_at",{ascending:false}),
@@ -139,6 +140,8 @@ async function loadMine(){
   S.mineAt=Date.now();
 }
 async function loadSocial(){
+  // Links went stale: re-sign your own thumbnails and close-ups too, so other tabs don't go blank.
+  if(freshUrls()) signUrls("fits", [...S.fits.map(x=>x.thumb_path), ...S.closet.map(c=>c.crop_path).filter(Boolean)]).then(()=>softRender(["home","closet","item","saved"])).catch(()=>{});
   // Friendships and posts don't depend on each other, so fetch them together, then names, hearts and photos together.
   const [{ data:fr }, { data:posts }] = await Promise.all([
     sb.from("friendships").select("user_id,friend_id"),
@@ -458,7 +461,7 @@ async function saveFit(share=false){
     const savedMsg=(n>1?`Saved · ${n}-day streak`:"Saved · streak started")+newNote;
     // Sharing: hold the message until you post or back out, so it never sits on top of the share screen.
     if(!share) toast(savedMsg);
-    else { S.shareBack="home"; S.savedMsg=savedMsg; await openShare();
+    else { S.shareBack="home"; S.savedMsg=savedMsg; await openShare(main);
       if(S.view!=="share"){ S.view="home"; render(); toast(savedMsg); S.savedMsg=null; } }   // photo didn't load: still land on Fits
   } catch(e){ console.error(e); f.saving=false; render(); toast("Couldn't save. Check your connection and try again."); }
 }
@@ -481,7 +484,7 @@ function viewFit(){
       <select data-item-type="${i}" aria-label="Item ${i+1} type">${ITEM_TYPES.map(t=>`<option ${t===it.type?"selected":""}>${t}</option>`).join("")}</select>
       <button class="iconbtn" data-act="removeItem" data-i="${i}" aria-label="Remove item">${ICON.x}</button>
       ${S.closetReady&&it.item_id===null&&it.label?`<span class="notcloset small muted">Not in closet${it.clear===false?" (not fully visible)":""} · <button class="link small" data-act="addToCloset" data-i="${i}">Add to closet</button></span>`:""}</div>`).join("")||`<p class="small muted">No items listed.</p>`}</div>
-    <div class="row"><button class="btn sm" data-act="addItem">Add item</button><button class="btn sm primary" data-act="saveItems" id="saveItemsBtn" hidden>Save changes</button></div></div>
+    <div class="row"><button class="btn sm" data-act="addItem">Add item</button><button class="btn sm primary" data-act="saveItems" id="saveItemsBtn" ${S.itemsDirty?"":"hidden"}>Save changes</button></div></div>
     <div class="row" style="gap:10px"><button class="btn" data-act="share">Share with friends</button><span class="spacer"></span><button class="btn ghost sm" data-act="deleteFit">Delete fit</button></div>
     ${S.confirmDel?`<div class="confirm"><span class="small" style="flex:1;min-width:160px">Delete this fit for good? It also leaves your streak history.</span><button class="btn sm" data-act="cancelDelete">Keep</button><button class="btn sm primary" data-act="confirmDelete">Delete</button></div>`:""}
   </div>`;
@@ -494,7 +497,7 @@ function recCard(kind,label,title,detail,state,act="recFb"){
     ${state==="up"?`<span class="small muted" style="align-self:center">${act==="flowRecFb"?"Goes to Ideas when you save":"Added to Ideas"}</span>`:""}</div></div>`;
 }
 async function openFit(id, from="home"){
-  S.fitBack=from; S.fitId=id; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
+  S.itemsDirty=false; S.fitBack=from; S.fitId=id; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
   const x=curFit(); if(x && !url("fits",x.image_path)){ await signUrls("fits",[x.image_path]); if(S.fitId===id && S.view==="fit") render(); }
 }
 function ideaFor(x,kind){
@@ -521,7 +524,6 @@ async function recFeedback(kind,val){
 
 /* --- share --- */
 // The closet close-up for a plugged item, if it has one.
-// because their close-up can come from another day's photo and show your face.
 function plugCrop(it){
   const piece=it && it.item_id && S.closet.find(c=>c.id===it.item_id);
   if(!piece || !piece.crop_path || !url("fits",piece.crop_path)) return null;
@@ -533,7 +535,7 @@ const CHAT_HOURS=24;
 // it mentions something specific, otherwise from the occasion. You can tap another or write your own.
 // Lines turn the invitation outward: a quick note on what you're up to, then a question about them.
 const OCC_LINE={"Casual/Hangout":"How's your week going? Tell me!","Errands":"Running around today. What are you up to?","Office":"Coffee break? Tell me about your day","WFH":"Working from home. How's your day going?","Active/Workout":"Just worked out! What's keeping you moving?","Night Out":"Out tonight! What are you up to?","Work Event":"At an event. How's your week been?","Get Fancy":"All dressed up! What's new with you?","Travel Day":"On the move. Where are you these days?","Festival":"At the festival! What are you listening to lately?","Beach/Resort":"Beach day! What's your next adventure?"};
-const CAPTION_LINES=[[/\b(happy hour|wine|cocktails?|drinks)\b/,"Happy hour! What are you sipping on? 🍷"],[/\b(concert|show|band|gig|festival|tour)\b/,"At a show! What are you listening to? 🎶"],[/\b(game|match|stadium|giants|warriors|niners|49ers)\b/,"At the game! Who are you rooting for?"],[/\b(brunch)\b/,"Brunch! What's new with you?"],[/\b(wedding)\b/,"Wedding day! Tell me your news"],[/\b(birthday|bday)\b/,"Birthday plans! What's new with you?"],[/\b(dinner)\b/,"Dinner out! Any good spots lately?"],[/\b(date night|date)\b/,"Date night! What's new with you?"],[/\b(interview)\b/,"Big interview today! How's work for you?"],[/\b(trip|flight|vacation|travel)\b/,"Traveling! Where should I go next?"],[/\b(fleet week|parade|airshow|air show)\b/,"Fleet Week! Are you out watching too? ✈️"]];
+const CAPTION_LINES=[[/\b(happy hour|wine|cocktails?|drinks)\b/,"Happy hour! What are you sipping on? 🍷"],[/\b(concert|show|band|gig|festival|tour)\b/,"At a show! What are you listening to? 🎶"],[/\b(game|match|stadium|giants|warriors|niners|49ers)\b/,"At the game! Who are you rooting for?"],[/\b(brunch)\b/,"Brunch! What's new with you?"],[/\b(wedding)\b/,"Wedding day! Tell me your news"],[/\b(birthday|bday)\b/,"Birthday plans! What's new with you?"],[/\b(dinner)\b/,"Dinner out! Any good spots lately?"],[/\b(date night|date)\b/,"Date night! What's new with you?"],[/\b(interview)\b/,"Big interview today! How's work for you?"],[/\b(trip|flight|vacation|travel)\b/,"Traveling! Where should I go next?"],[/\b(fleet week|airshow|air show)\b/,"Fleet Week! Are you out watching too? ✈️"]];
 function chatLines(x){
   const cap=normLabel(x.detail||""), out=[];
   const hit=CAPTION_LINES.find(([re])=>re.test(cap)); if(hit) out.push(hit[1]);
@@ -545,10 +547,10 @@ function chatLines(x){
 const chatOpen = p => !!(p && p.chat_topic && p.chat_until && new Date(p.chat_until) > new Date());
 const cleanPhone = v => { const t=String(v||"").trim(), d=t.replace(/\D/g,""); return d.length>=7&&d.length<=15 ? (t.startsWith("+")?"+":"")+d : ""; };
 const firstName = id => displayName(id).split(/\s+/)[0];
-// The topic as the friend would say it back: "my night out" becomes "your night out".
 function chatLinks(p){
   const phone=S.phones&&S.phones[p.user_id]; if(!phone) return null;
-  const msg=`Hi ${firstName(p.user_id)}! Loved your ${p.category==="Casual/Hangout"?"":p.category+" "}fit ${CAT_EMOJI[p.category]||"💛"} How's it going?`;
+  const occ={"Casual/Hangout":"","Active/Workout":"workout ","Beach/Resort":"beach ","Get Fancy":"dressed-up ","Travel Day":"travel ","Work Event":"work event ","Night Out":"night out ","Errands":"","WFH":"WFH ","Office":"office ","Festival":"festival "}[p.category] ?? "";
+  const msg=`Hi ${firstName(p.user_id)}! Loved your ${occ}fit ${CAT_EMOJI[p.category]||"💛"} How's it going?`;
   const sep=/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)?"&":"?";
   return { text:`sms:${phone}${sep}body=${encodeURIComponent(msg)}`, call:`tel:${phone}` };
 }
@@ -578,11 +580,11 @@ function viewShare(){
     <button class="btn primary block" data-act="postShare" ${sh.posting?"disabled":""}>${sh.posting?"Posting…":"Post to friends"}</button>
   </div>`;
 }
-async function openShare(){
+async function openShare(blob){
   const x=curFit(); if(!x) return;
-  const { data, error } = await sb.storage.from("fits").download(x.image_path);
-  if(error){ toast("Couldn't load this photo."); return; }
-  const img=await loadImage(URL.createObjectURL(data));
+  if(!blob){ const { data, error } = await sb.storage.from("fits").download(x.image_path);
+    if(error){ toast("Couldn't load this photo."); return; } blob=data; }
+  let img; try { img=await blobImage(blob); } catch { toast("Couldn't load this photo."); return; }
   S.share={img, caption:x.detail||"", plugs:{}, posting:false, chat:false, chatTopic:chatLines(x)[0], phone:""};
   S.view="share"; render(); scrollTo(0,0);
   if(!S.chatReady){ const ph=await sb.from("contacts").select("phone").eq("user_id",S.uid).maybeSingle();
@@ -634,7 +636,7 @@ function viewFeed(){
     const h=S.hearts[p.id]||{count:0,mine:false}, name=displayName(p.user_id);
     out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head"><span class="avatar" style="background:${avatarColor(p.user_id)}">${esc(name.slice(0,1).toUpperCase())}</span>
       <div class="headtext"><b>${esc(name)}</b><span class="small muted">${esc(ago(p.created_at))}</span></div><span class="spacer"></span><span class="cpill">${CAT_EMOJI[p.category]||""} ${esc(p.category)}</span></div>
-      ${p.caption||p.detail?`<p class="hook" data-act="hookMore">${esc(p.caption||p.detail)}</p>`:""}
+      ${p.caption||p.detail?`<p class="hook ${S.hookOpen&&S.hookOpen.has(p.id)?"open":""}" data-act="hookMore" data-id="${esc(p.id)}">${esc(p.caption||p.detail)}</p>`:""}
       <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
       <div class="body">
       <div class="actrow"><button class="heart ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}" aria-label="${h.mine?"Unheart":"Heart"} this fit">${h.mine?ICON.heartFill:ICON.heart}${h.count||""}</button>
@@ -980,8 +982,8 @@ function swatchChoices(c){
 async function loadPalette(c){
   (S.palettes||(S.palettes={}))[c.id]=[];
   try {
-    const img=new Image(); img.crossOrigin="anonymous";
-    await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src=url("fits",c.crop_path); });
+    const d=await sb.storage.from("fits").download(c.crop_path); if(d.error) throw d.error;
+    const img=await blobImage(d.data);
     S.palettes[c.id]=colorsIn(img,img.naturalWidth*.1,img.naturalHeight*.1,img.naturalWidth*.8,img.naturalHeight*.8,.02).slice(0,6).map(x=>x.hex);
     softRender(["item"]);
   } catch(e){ console.warn("palette",e); }
@@ -1173,21 +1175,21 @@ const ACT = {
   removeItemConfirm:()=>removeClosetItem(S.itemId),
   swipeRemove:t=>removeClosetItem(t.dataset.id),
   cancelFlow:()=>{ const f=S.flow; if(f){ URL.revokeObjectURL(f.origUrl); Object.values(f.comps||{}).forEach(c=>c.url!==f.origUrl&&URL.revokeObjectURL(c.url)); } S.flow=null; S.view="home"; render(); },
-  pickCat:t=>{ S.flow.cat=t.dataset.cat; render(); },
-  runStyle:()=>runStyle(),
-  retryAnalysis:()=>runAnalysis(S.flow),
-  pickBg:t=>{ S.flow.bg=t.dataset.bg; S.flow.pickedBg=true; render(); },
+  pickCat:t=>{ if(!S.flow) return; S.flow.cat=t.dataset.cat; render(); },
+  runStyle:()=>{ if(S.flow) runStyle(); },
+  retryAnalysis:()=>{ if(S.flow) runAnalysis(S.flow); },
+  pickBg:t=>{ if(!S.flow) return; S.flow.bg=t.dataset.bg; S.flow.pickedBg=true; render(); },
   saveFit:()=>saveFit(false),
   saveShare:()=>saveFit(true),
   recFb:t=>recFeedback(t.dataset.kind,t.dataset.val),
   flowRecFb:t=>{ const f=S.flow; if(!f) return; const k=t.dataset.kind, v=t.dataset.val; f.recFb={...(f.recFb||{}),[k]:(f.recFb||{})[k]===v?null:v}; render(); },
   reveal:()=>{ const f=S.flow; if(!f) return; f.step="result"; render(); scrollTo(0,0); },
   backToBackdrop:()=>{ const f=S.flow; if(!f) return; f.step=f.keepBg?"occasion":"style"; render(); scrollTo(0,0); },
-  addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null,clear:true}]; render(); $("#saveItemsBtn").hidden=false; const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
-  removeItem:t=>{ const x=curFit(); x.items=x.items.filter((_,i)=>i!=t.dataset.i); render(); $("#saveItemsBtn").hidden=false; },
+  addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null,clear:true}]; S.itemsDirty=true; render(); const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
+  removeItem:t=>{ const x=curFit(); x.items=x.items.filter((_,i)=>i!=t.dataset.i); S.itemsDirty=true; render(); },
   saveItems:async()=>{ const x=curFit(); x.items=(x.items||[]).filter(i=>i.label.trim()).map(i=>({...i,label:i.label.trim()}));
     try { x.items=await linkItems(x.items); } catch(e){ console.error(e); }
-    const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); toast(error?"Couldn't save labels.":"Labels saved"); render(); },
+    const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); if(!error) S.itemsDirty=false; toast(error?"Couldn't save labels.":"Labels saved"); render(); },
   share:()=>{ S.shareBack="fit"; openShare(); },
   cancelShare:()=>{ S.share=null; S.view=S.shareBack||"fit"; S.shareBack=null; render(); scrollTo(0,0); if(S.savedMsg){ toast(S.savedMsg); S.savedMsg=null; } },
   postShare:()=>postShare(),
@@ -1199,7 +1201,7 @@ const ACT = {
     sb.storage.from("fits").remove([x.image_path,x.thumb_path,x.orig_path].filter(Boolean));
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
-  hookMore:t=>t.classList.toggle("open"),
+  hookMore:t=>{ const o=S.hookOpen||(S.hookOpen=new Set()); o.has(t.dataset.id)?o.delete(t.dataset.id):o.add(t.dataset.id); render(); },
   chatLine:t=>{ if(S.share){ S.share.chatTopic=t.dataset.line; render(); } },
   endChat:t=>endChat(t.dataset.id),
   savePhone:async()=>{ const phone=cleanPhone(S.phoneIn ?? S.myPhone); if(!phone){ toast("That doesn't look like a phone number."); return; }
@@ -1262,7 +1264,7 @@ document.addEventListener("input", e=>{
   if(t.id==="authEmail") S.auth.email=t.value;
   else if(t.id==="authCode") S.auth.code=t.value;
   else if(t.id==="detail"&&S.flow) S.flow.detail=t.value;
-  else if(t.dataset.itemI!=null){ curFit().items[t.dataset.itemI].label=t.value; $("#saveItemsBtn").hidden=false; }
+  else if(t.dataset.itemI!=null){ curFit().items[t.dataset.itemI].label=t.value; S.itemsDirty=true; const b=$("#saveItemsBtn"); if(b) b.hidden=false; }
   else if(t.id==="caption"&&S.share) S.share.caption=t.value;
   else if(t.id==="chatTopic"&&S.share) S.share.chatTopic=t.value;
   else if(t.id==="chatPhone"&&S.share) S.share.phone=t.value;
@@ -1277,7 +1279,7 @@ document.addEventListener("input", e=>{
 document.addEventListener("change", e=>{
   const t=e.target;
   if(t.id==="photoIn") startFlow(t.files&&t.files[0]);
-  else if(t.dataset.itemType!=null){ curFit().items[t.dataset.itemType].type=t.value; $("#saveItemsBtn").hidden=false; }
+  else if(t.dataset.itemType!=null){ curFit().items[t.dataset.itemType].type=t.value; S.itemsDirty=true; const b=$("#saveItemsBtn"); if(b) b.hidden=false; }
   else if(t.id==="keepBg"&&S.flow){ S.flow.keepBg=t.checked; render(); }
   else if(t.id==="buyRecs") setBuyRecs(t.checked);
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
@@ -1292,6 +1294,9 @@ async function onSession(session){
   S.booted=true;
   S.uid=uid; S.email=session?.user?.email||""; S.loaded=false; S.urls={};
   S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home"; S.socialAt=0; S.mineAt=0;
+  // Switching accounts: nothing typed or loaded for the last person carries over.
+  Object.assign(S,{flow:null, share:null, fitId:null, itemId:null, hearts:{}, phones:{}, myPhone:"", chatReady:false, palettes:{}, swatchSeen:{}, codeIn:"", handleIn:null, phoneIn:null, friendMsg:"",
+    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
   if(!uid){ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); return; }
   render();
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
