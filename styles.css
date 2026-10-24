@@ -151,6 +151,10 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .post img.main{display:block;width:100%;aspect-ratio:3/4;object-fit:cover;background:var(--chip)}
 .post .body{padding:12px 14px 16px;display:flex;flex-direction:column;gap:10px}
 .plugcard{border-left:3px solid var(--gold);padding:4px 0 4px 12px;display:flex;flex-direction:column;gap:3px}
+.plugcard .pctext{display:flex;flex-direction:column;gap:3px;min-width:0}
+.plugcard.hasimg{flex-direction:row;align-items:flex-start;gap:12px}
+.plugcard.hasimg>img{width:64px;height:64px;flex:none;object-fit:cover;border-radius:12px;background:var(--chip)}
+.plug .plugthumb{width:40px;height:40px;flex:none;object-fit:cover;border-radius:10px;background:var(--chip)}
 .plugcard a{color:var(--accent);font-weight:600;font-size:14px}
 .heart{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;font-weight:700;font-size:14px}
 .heart svg{width:17px;height:17px}

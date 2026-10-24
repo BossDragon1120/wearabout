@@ -144,7 +144,7 @@ async function loadSocial(){
   const [pr, h] = await Promise.all([
     ids.length ? sb.from("profiles").select("id,handle").in("id",ids) : {data:[]},
     list.length ? sb.from("hearts").select("post_id,user_id").in("post_id",list.map(p=>p.id)) : {data:[]},
-    signUrls("posts", list.map(p=>p.image_path)),
+    signUrls("posts", list.flatMap(p=>[p.image_path, ...(p.plugs||[]).map(g=>g.img).filter(Boolean)])),
   ]);
   (pr.data||[]).forEach(p=>S.people[p.id]=p);
   const hearts={};
@@ -455,6 +455,14 @@ async function recFeedback(kind,val){
 }
 
 /* --- share --- */
+// The closet close-up for a plugged item, if it has one. Hats and glasses are left out while face blur is on,
+// because their close-up can come from another day's photo and show your face.
+function plugCrop(it){
+  const piece=it && it.item_id && S.closet.find(c=>c.id===it.item_id);
+  if(!piece || !piece.crop_path || !url("fits",piece.crop_path)) return null;
+  if(S.share && S.share.blur.on && ["hat","eyewear"].includes(piece.type)) return null;
+  return piece.crop_path;
+}
 function viewShare(){
   const sh=S.share, x=curFit(); if(!sh||!x) return "";
   return `<button class="back" data-act="cancelShare">${ICON.back} Back</button><div class="stack">
@@ -467,10 +475,10 @@ function viewShare(){
     <div class="field"><label for="caption">Caption (optional)</label><input class="input" id="caption" maxlength="140" value="${esc(sh.caption)}" placeholder="Where you're headed, how you feel">${x.detail?`<p class="small muted">Filled in from your occasion notes. Edit it for friends if you like; your saved fit stays as is.</p>`:""}</div>
     <div class="stack" style="gap:8px"><h3>Plug something you love</h3>
       ${(x.items||[]).length?x.items.map((it,i)=>{ const p=sh.plugs[i]; return `<div class="plug">
-        <label class="ck"><input type="checkbox" data-plug-on="${i}" ${p?"checked":""}> ${esc(it.label)}</label>
+        <label class="ck"><input type="checkbox" data-plug-on="${i}" ${p?"checked":""}>${plugCrop(it)?`<img class="plugthumb" src="${esc(url("fits",plugCrop(it)))}" alt="">`:""} ${esc(it.label)}</label>
         ${p?`<input class="input" data-plug-i="${i}" data-field="brand" maxlength="40" placeholder="Brand (optional)" value="${esc(p.brand)}" autocapitalize="words">
         <textarea class="input" data-plug-i="${i}" data-field="review" maxlength="160" placeholder="Why you love it (optional)">${esc(p.review)}</textarea>
-        <p class="small muted">Friends get a Shop it button that searches for ${esc([p.brand, it.label].filter(Boolean).join(" "))}.</p>`:""}</div>`; }).join(""):`<p class="small muted">No items were listed for this fit.</p>`}
+        <p class="small muted">Friends get a Shop it button that searches for ${esc([p.brand, it.label].filter(Boolean).join(" "))}.${plugCrop(it)?" They'll see this close-up too.":""}</p>`:""}</div>`; }).join(""):`<p class="small muted">No items were listed for this fit.</p>`}
     </div>
     <p class="small muted">Friends see the photo, occasion and caption. Your score stays private. Friends can only react with hearts.</p>
     <button class="btn primary block" data-act="postShare" ${sh.posting?"disabled":""}>${sh.posting?"Posting…":"Post to friends"}</button>
@@ -498,12 +506,20 @@ async function postShare(){
   const sh=S.share, x=curFit(); if(!sh||!x) return;
   const plugs=[];
   for(const [i,p] of Object.entries(sh.plugs)){ const it=x.items[i]; if(!it) continue;
-    plugs.push({label:it.label, brand:String(p.brand||"").trim().slice(0,40), review:String(p.review||"").trim().slice(0,160)}); }
+    plugs.push({label:it.label, brand:String(p.brand||"").trim().slice(0,40), review:String(p.review||"").trim().slice(0,160), _crop:plugCrop(it)}); }
   sh.posting=true; render();
   try {
     drawShare(); const blob=await toBlob($("#shareCanvas"),"image/jpeg",.85);
     const id=crypto.randomUUID(), path=`${S.uid}/${id}.jpg`;
     const u=await sb.storage.from("posts").upload(path,blob,{contentType:"image/jpeg"}); if(u.error) throw u.error;
+    // Close-ups live in your private photos, so copy just the plugged ones into this post. A failed copy just means a text-only plug.
+    await Promise.all(plugs.map(async (g,i)=>{ const crop=g._crop; delete g._crop; if(!crop) return;
+      try {
+        const d=await sb.storage.from("fits").download(crop); if(d.error) throw d.error;
+        const ip=`${S.uid}/${id}-plug${i}.jpg`, r=await sb.storage.from("posts").upload(ip,d.data,{contentType:"image/jpeg"}); if(r.error) throw r.error;
+        g.img=ip; S.urls["posts:"+ip]=url("fits",crop);
+      } catch(e){ console.error("plug photo",e); }
+    }));
     const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:"", caption:sh.caption.trim().slice(0,140), plugs, badges:(x.analysis&&x.analysis.badges)||[], image_path:path});
     if(error) throw error;
     S.urls["posts:"+path]=URL.createObjectURL(blob);
@@ -523,7 +539,7 @@ function viewFeed(){
       <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
       <div class="body">${p.caption?`<p>${esc(p.caption)}</p>`:""}
       ${badgeChips(p.badges)}
-      ${(p.plugs||[]).map(g=>{ const shop=safeUrl(g.link)||google([g.brand,g.label].filter(Boolean).join(" ")); return `<div class="plugcard"><b class="small">${esc(g.label)}${g.brand?` <span class="muted">· ${esc(g.brand)}</span>`:""}</b>${g.review?`<span class="small">${esc(g.review)}</span>`:""}<a href="${esc(shop)}" target="_blank" rel="noopener noreferrer">Shop it</a></div>`; }).join("")}
+      ${(p.plugs||[]).map(g=>{ const shop=safeUrl(g.link)||google([g.brand,g.label].filter(Boolean).join(" ")); const pimg=g.img&&url("posts",g.img); return `<div class="plugcard ${pimg?"hasimg":""}">${pimg?`<img src="${esc(pimg)}" alt="${esc(g.label)}" loading="lazy">`:""}<div class="pctext"><b class="small">${esc(g.label)}${g.brand?` <span class="muted">· ${esc(g.brand)}</span>`:""}</b>${g.review?`<span class="small">${esc(g.review)}</span>`:""}<a href="${esc(shop)}" target="_blank" rel="noopener noreferrer">Shop it</a></div></div>`; }).join("")}
       <div class="row"><button class="heart ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}">${h.mine?ICON.heartFill:ICON.heart}${h.count||""}</button><span class="spacer"></span>
       ${p.user_id===S.uid?`<button class="link small" data-act="removePost" data-id="${esc(p.id)}">Remove post</button>`:""}</div></div></article>`;
   }
@@ -849,7 +865,7 @@ const ACT = {
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
   removePost:async t=>{ const p=S.posts.find(z=>z.id===t.dataset.id); const { error } = await sb.from("posts").delete().eq("id",t.dataset.id);
-    if(error){ toast("Couldn't remove the post."); return; } if(p) sb.storage.from("posts").remove([p.image_path]);
+    if(error){ toast("Couldn't remove the post."); return; } if(p) sb.storage.from("posts").remove([p.image_path, ...(p.plugs||[]).map(g=>g.img).filter(Boolean)]);
     S.posts=S.posts.filter(z=>z.id!==t.dataset.id); render(); toast("Post removed"); },
   removeRec:async t=>{ const r=S.recs.find(z=>z.id===t.dataset.id); if(!r) return;
     const { error } = await sb.from("saved_recs").delete().eq("id",r.id); if(error){ toast("Couldn't remove it."); return; }
