@@ -8,6 +8,7 @@ create table public.profiles (
   id uuid primary key references auth.users on delete cascade,
   handle text not null default '' check (char_length(handle) <= 30),
   friend_code text not null unique,
+  avatar_path text,                         -- avatars/<uid>/<file>.jpg
   created_at timestamptz not null default now()
 );
 
@@ -122,6 +123,14 @@ language sql stable security definer set search_path = public as $$
   );
 $$;
 
+-- True when a and b are connected in either direction (or are the same person).
+create or replace function public.is_connected(a uuid, b uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select a = b or exists (
+    select 1 from friendships
+    where (user_id = a and friend_id = b) or (user_id = b and friend_id = a));
+$$;
+
 -- Every new account gets a profile with a unique 6-character friend code.
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -199,7 +208,7 @@ create policy "profiles visible to self and connections" on public.profiles for 
 create policy "edit own profile" on public.profiles for update to authenticated
   using (id = auth.uid()) with check (id = auth.uid());
 revoke update on public.profiles from authenticated;
-grant update (handle) on public.profiles to authenticated;   -- friend codes can't be changed from the app
+grant update (handle, avatar_path) on public.profiles to authenticated;   -- friend codes can't be changed from the app
 
 -- fits and saved recs: private to their owner
 create policy "own fits" on public.fits for all to authenticated
@@ -249,7 +258,8 @@ create policy "unheart" on public.hearts for delete to authenticated
 
 insert into storage.buckets (id, name, public) values
   ('fits', 'fits', false),
-  ('posts', 'posts', false)
+  ('posts', 'posts', false),
+  ('avatars', 'avatars', false)
 on conflict (id) do nothing;
 
 -- fits/<uid>/...: only the owner
@@ -267,3 +277,11 @@ create policy "posts: owner uploads" on storage.objects for insert to authentica
   with check (bucket_id = 'posts' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "posts: owner deletes" on storage.objects for delete to authenticated
   using (bucket_id = 'posts' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- avatars/<uid>/...: you and people you're connected with can see it; only you change it
+create policy "avatars: connections read" on storage.objects for select to authenticated
+  using (bucket_id = 'avatars' and public.is_connected(auth.uid(), ((storage.foldername(name))[1])::uuid));
+create policy "avatars: owner uploads" on storage.objects for insert to authenticated
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "avatars: owner deletes" on storage.objects for delete to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);

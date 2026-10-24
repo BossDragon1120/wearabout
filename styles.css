@@ -351,3 +351,10 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .post .head .cpill{flex:none}
 .hook{margin:0;padding:0 14px 10px;font-size:17px;line-height:1.35;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
 .hook.open{-webkit-line-clamp:unset;display:block}
+
+/* Profile photos */
+img.avatar{display:block;background:var(--chip)}
+.avatar.lg{width:64px;height:64px;font-size:24px}
+.avatarCanvas{width:min(100%,300px);aspect-ratio:1;align-self:center;border-radius:16px;touch-action:none;background:var(--chip);cursor:grab}
+#avatarZoom{width:100%}
+.sheet{max-height:92vh;overflow:auto}

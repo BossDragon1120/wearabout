@@ -81,6 +81,13 @@ const url = (bucket,path) => S.urls[bucket+":"+path] || "";
 const me = () => S.uid;
 const mutual = () => [...S.out].filter(id=>S.inc.has(id));
 function displayName(id){ if(id===S.uid) return "You"; return (S.people[id] && S.people[id].handle) || "A friend"; }
+// A friend's photo when they've added one, otherwise their colored initial.
+function avatar(id, cls=""){
+  const pr=id===S.uid?S.profile:S.people[id], u=pr&&pr.avatar_path&&url("avatars",pr.avatar_path);
+  if(u) return `<img class="avatar ${cls}" src="${esc(u)}" alt="">`;
+  const name=id===S.uid?((S.profile&&S.profile.handle)||"You"):displayName(id);
+  return `<span class="avatar ${cls}" style="background:${avatarColor(id)}">${esc(name.slice(0,1).toUpperCase())}</span>`;
+}
 function avatarColor(id){ let h=0; for(const c of String(id)) h=(h*31+c.charCodeAt(0))>>>0; return `hsl(${h%360} 42% 46%)`; }
 
 /* ---------- images ---------- */
@@ -136,6 +143,8 @@ async function loadMine(){
   S.buyRecs=!(g.data && g.data.buy_recs===false);
   S.closetReady=!c.error; S.closet=c.data||[];
   S.chatReady=!ph.error; S.myPhone=(ph.data&&ph.data.phone)||"";
+  S.avatarReady=!!(S.profile && "avatar_path" in S.profile);
+  if(S.profile&&S.profile.avatar_path) signUrls("avatars",[S.profile.avatar_path]).then(()=>softRender(["friends","feed"])).catch(()=>{});
   await signUrls("fits", [...S.fits.map(x=>x.thumb_path), ...S.closet.map(c=>c.crop_path).filter(Boolean)]);
   S.mineAt=Date.now();
 }
@@ -149,17 +158,18 @@ async function loadSocial(){
   ]);
   S.out=new Set((fr||[]).filter(x=>x.user_id===S.uid).map(x=>x.friend_id));
   S.inc=new Set((fr||[]).filter(x=>x.friend_id===S.uid).map(x=>x.user_id));
-  const ids=[...new Set([...S.out,...S.inc])].filter(id=>!S.people[id]);
+  const ids=[...new Set([...S.out,...S.inc])];   // re-read names and photos each time, since friends can change them
   const list=posts||[];
   const chatters=[...new Set(list.filter(p=>chatOpen(p)&&p.user_id!==S.uid).map(p=>p.user_id))];
   const [pr, h, , ct] = await Promise.all([
-    ids.length ? sb.from("profiles").select("id,handle").in("id",ids) : {data:[]},
+    ids.length ? sb.from("profiles").select(S.avatarReady?"id,handle,avatar_path":"id,handle").in("id",ids) : {data:[]},
     list.length ? sb.from("hearts").select("post_id,user_id").in("post_id",list.map(p=>p.id)) : {data:[]},
     signUrls("posts", list.flatMap(p=>[p.image_path, ...(p.plugs||[]).map(g=>g.img).filter(Boolean)])),
     chatters.length ? sb.from("contacts").select("user_id,phone").in("user_id",chatters) : {data:[]},
   ]);
   S.phones={}; (ct&&ct.data||[]).forEach(x=>S.phones[x.user_id]=x.phone);
   (pr.data||[]).forEach(p=>S.people[p.id]=p);
+  if(S.avatarReady) await signUrls("avatars", Object.values(S.people).map(p=>p.avatar_path).filter(Boolean));
   const hearts={};
   (h.data||[]).forEach(x=>{ const e=hearts[x.post_id]||(hearts[x.post_id]={count:0,mine:false}); e.count++; if(x.user_id===S.uid) e.mine=true; });
   S.posts=list; S.hearts=hearts; S.socialAt=Date.now();
@@ -229,6 +239,7 @@ function render(){
   // A different screen starts fresh (so old open panels don't carry over); the same screen updates in place.
   if(prev!==S.renderedView) m.innerHTML=html; else setHTML(m, html);
   if(v==="share") drawShare();
+  if(S.avatarEdit&&S.avatarEdit.img) drawAvatar();
 }
 function softRender(views){
   const a=document.activeElement, typing=a && a.closest && a.closest("#main") && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
@@ -634,7 +645,7 @@ function viewFeed(){
   if(!S.posts.length) out+=`<div class="empty"><b>Nothing here yet</b><p class="small muted">Share a fit from its page, or add friends with your friend code. Mutual friends' posts show up here.</p><button class="btn sm" data-act="nav" data-view="friends">Add friends</button></div>`;
   for(const p of S.posts){
     const h=S.hearts[p.id]||{count:0,mine:false}, name=displayName(p.user_id);
-    out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head"><span class="avatar" style="background:${avatarColor(p.user_id)}">${esc(name.slice(0,1).toUpperCase())}</span>
+    out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head">${avatar(p.user_id)}
       <div class="headtext"><b>${esc(name)}</b><span class="small muted">${esc(ago(p.created_at))}</span></div><span class="spacer"></span><span class="cpill">${CAT_EMOJI[p.category]||""} ${esc(p.category)}</span></div>
       ${p.caption||p.detail?`<p class="hook ${S.hookOpen&&S.hookOpen.has(p.id)?"open":""}" data-act="hookMore" data-id="${esc(p.id)}">${esc(p.caption||p.detail)}</p>`:""}
       <img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
@@ -706,7 +717,7 @@ async function setBuyRecs(on){
 /* --- friends --- */
 function viewFriends(){
   const m=mutual(), pending=[...S.out].filter(id=>!S.inc.has(id)), incoming=[...S.inc].filter(id=>!S.out.has(id)), p=S.profile;
-  const person=(id,extra,action="")=>`<div class="person"><span class="avatar" style="background:${avatarColor(id)}">${esc(displayName(id).slice(0,1).toUpperCase())}</span><div style="flex:1;min-width:0"><b>${esc(displayName(id))}</b>${extra}</div>${action}</div>`;
+  const person=(id,extra,action="")=>`<div class="person">${avatar(id)}<div style="flex:1;min-width:0"><b>${esc(displayName(id))}</b>${extra}</div>${action}</div>`;
   const lastPost=id=>{ const x=S.posts.find(q=>q.user_id===id); return x?`<div class="small muted">Last shared ${esc(ago(x.created_at))}</div>`:""; };
   return `<div class="stack"><div class="row"><h2>Friends</h2><span class="spacer"></span><button class="btn sm primary" data-act="invite" ${p?"":"disabled"}>Invite friends</button></div>
     ${incoming.length?`<div class="panel"><h3>Added you</h3>${incoming.map(id=>person(id,`<div class="small muted">Add them back to see each other's fits</div>`,`<button class="btn sm primary" data-act="addBack" data-uid="${esc(id)}">Add back</button>`)).join("")}</div>`:""}
@@ -718,15 +729,65 @@ function viewFriends(){
       <p class="small muted">With a code, you each add the other's. An invite link does both at once.</p>
     </div>
     <div class="panel"><h3>Your profile</h3>
+      ${S.avatarReady?`<div class="row" style="flex-wrap:nowrap;gap:14px">${avatar(S.uid,"lg")}<div class="stack" style="gap:6px;min-width:0">
+        ${p&&p.avatar_path?"":`<span class="small muted">Add a photo so friends recognize you.</span>`}
+        <div class="row" style="gap:8px"><button class="btn sm" data-act="avatarPick">${p&&p.avatar_path?"Change photo":"Add a photo"}</button>${S.fits.length?`<button class="link small" data-act="avatarFromFits">Use one of my fits</button>`:""}</div></div></div>`:""}
       ${p?`<div class="row" style="flex-wrap:nowrap"><span class="small muted">Friend code</span><span class="code">${esc(p.friend_code)}</span><span class="spacer"></span><button class="btn sm" data-act="copyCode">Copy</button></div>`:`<p class="small muted">Loading…</p>`}
       <div class="field"><label for="handleIn">Name friends see</label><div class="row" style="flex-wrap:nowrap"><input class="input" id="handleIn" maxlength="30" value="${esc(S.handleIn ?? (p&&p.handle) ?? "")}" placeholder="e.g. Dana"><button class="btn sm" data-act="saveHandle">Save</button></div></div>
       ${S.chatReady?`<div class="field"><label for="phoneIn">Your number</label>
         <div class="row" style="flex-wrap:nowrap"><input class="input" id="phoneIn" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(S.phoneIn ?? S.myPhone)}" placeholder="(555) 123-4567"><button class="btn sm" data-act="savePhone">Save</button></div>
         <p class="small muted">Used only when you invite friends to chat about a fit. Only mutual friends can see it.${S.myPhone?` <button class="link small" data-act="removePhone">Remove my number</button>`:""}</p></div>`:""}
     </div>
+    ${avatarSheet()}
     <p class="small muted" style="text-align:center">Signed in as ${esc(S.email)}</p>
     <button class="btn ghost sm signout" data-act="signOut">Sign out</button>
   </div>`;
+}
+/* --- profile photo --- */
+// Pick a photo (or one of your fits), drag and zoom to frame your face in the circle, save.
+function avatarSheet(){
+  const a=S.avatarEdit; if(!a) return "";
+  if(a.choosing) return `<div class="sheetback" data-act="avatarCancel"></div><div class="sheet" role="dialog" aria-label="Choose a fit photo">
+    <h3>Choose a fit</h3><div class="mpick">${S.fits.slice(0,12).map(f=>`<button class="mcand" data-act="avatarFit" data-id="${esc(f.id)}"><img src="${esc(url("fits",f.thumb_path))}" alt="" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px"></button>`).join("")}</div>
+    <button class="btn block" data-act="avatarCancel">Cancel</button></div>`;
+  return `<div class="sheetback" data-act="avatarCancel"></div><div class="sheet" role="dialog" aria-label="Frame your photo">
+    <h3>Frame your photo</h3><p class="small muted">Drag to move, slide to zoom.</p>
+    <canvas id="avatarCanvas" class="avatarCanvas" width="560" height="560"></canvas>
+    <input type="range" id="avatarZoom" min="100" max="400" value="${Math.round(a.zoom*100)}" aria-label="Zoom">
+    <div class="row" style="flex-wrap:nowrap"><button class="btn block" data-act="avatarCancel" ${a.busy?"disabled":""}>Cancel</button><button class="btn primary block" data-act="avatarSave" ${a.busy?"disabled":""}>${a.busy?"Saving…":"Save"}</button></div></div>`;
+}
+function drawAvatar(){
+  const a=S.avatarEdit, c=$("#avatarCanvas"); if(!a||!a.img||!c) return;
+  const ctx=c.getContext("2d"), W=c.width, img=a.img, base=Math.max(W/img.naturalWidth, W/img.naturalHeight), s=base*a.zoom;
+  // keep the photo covering the circle
+  const w=img.naturalWidth*s, h=img.naturalHeight*s;
+  a.cx=Math.min(w/2, Math.max(W-w/2, a.cx)); a.cy=Math.min(h/2, Math.max(W-h/2, a.cy));
+  ctx.clearRect(0,0,W,W); ctx.drawImage(img, a.cx-w/2, a.cy-h/2, w, h);
+  ctx.save(); ctx.fillStyle="rgba(0,0,0,.45)"; ctx.beginPath(); ctx.rect(0,0,W,W); ctx.arc(W/2,W/2,W/2-6,0,Math.PI*2,true); ctx.fill("evenodd"); ctx.restore();
+}
+async function openAvatarEditor(blob, guessFace){
+  let img; try { img=await blobImage(blob); } catch { toast("That photo couldn't be opened."); return; }
+  const W=560, base=Math.max(W/img.naturalWidth, W/img.naturalHeight);
+  // From a full-length fit, start zoomed toward the top middle, where a face usually is.
+  // The circle should span about 38% of the photo's width; the point ~14% from the top sits in the middle.
+  const zoom=guessFace?Math.min(4,Math.max(1, W/(0.38*img.naturalWidth*base))):1;
+  const h=img.naturalHeight*base*zoom;
+  S.avatarEdit={img, zoom, cx:W/2, cy:guessFace ? W/2 + h*(0.5-0.14) : W/2};
+  render(); drawAvatar();
+}
+async function saveAvatar(){
+  const a=S.avatarEdit; if(!a||a.busy) return; a.busy=true; render(); drawAvatar();
+  try {
+    const W=560, out=document.createElement("canvas"); out.width=out.height=400;
+    const s=Math.max(W/a.img.naturalWidth, W/a.img.naturalHeight)*a.zoom*(400/W), w=a.img.naturalWidth*s, h=a.img.naturalHeight*s;
+    out.getContext("2d").drawImage(a.img, a.cx*(400/W)-w/2, a.cy*(400/W)-h/2, w, h);
+    const blob=await toBlob(out,"image/jpeg",.88), path=`${S.uid}/${crypto.randomUUID()}.jpg`, old=S.profile&&S.profile.avatar_path;
+    const up=await sb.storage.from("avatars").upload(path,blob,{contentType:"image/jpeg"}); if(up.error) throw up.error;
+    const { error } = await sb.from("profiles").update({avatar_path:path}).eq("id",S.uid); if(error) throw error;
+    if(old) sb.storage.from("avatars").remove([old]);
+    S.profile={...S.profile, avatar_path:path}; S.urls["avatars:"+path]=URL.createObjectURL(blob);
+    S.avatarEdit=null; render(); toast("Photo saved");
+  } catch(e){ console.error(e); a.busy=false; render(); drawAvatar(); toast("Couldn't save your photo. Try again."); }
 }
 async function addFriend(id){
   const { error } = await sb.from("friendships").insert({friend_id:id});
@@ -1093,6 +1154,13 @@ async function removeClosetItem(id=S.itemId){
     });
   } catch(e){ console.error(e); toast("Couldn't remove. Try again."); }
 }
+// Drag the photo inside the avatar circle.
+let apan=null;
+document.addEventListener("pointerdown",e=>{ if(e.target.id!=="avatarCanvas"||!S.avatarEdit) return; const r=e.target.getBoundingClientRect();
+  apan={x:e.clientX,y:e.clientY,cx:S.avatarEdit.cx,cy:S.avatarEdit.cy,k:560/r.width}; e.target.setPointerCapture(e.pointerId); });
+document.addEventListener("pointermove",e=>{ if(!apan||!S.avatarEdit) return; S.avatarEdit.cx=apan.cx+(e.clientX-apan.x)*apan.k; S.avatarEdit.cy=apan.cy+(e.clientY-apan.y)*apan.k; drawAvatar(); });
+document.addEventListener("pointerup",()=>{ apan=null; });
+document.addEventListener("pointercancel",()=>{ apan=null; });
 // Swipe left on a closet row to reveal Remove.
 let sw=null;
 const hideDel=row=>setTimeout(()=>{ if(!row.classList.contains("open")) row.parentElement.classList.remove("show"); },220);
@@ -1149,7 +1217,7 @@ document.addEventListener("touchend",()=>{
 
 /* ---------- actions ---------- */
 const ACT = {
-  nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.confirmDel=false; render(); scrollTo(0,0);
+  nav:t=>{ S.view=t.dataset.view; S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
     if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
   log:()=>{ S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
   changePhoto:()=>{ S.replacing=true; const i=$("#photoIn"); i.value=""; i.click(); },
@@ -1201,6 +1269,13 @@ const ACT = {
     sb.storage.from("fits").remove([x.image_path,x.thumb_path,x.orig_path].filter(Boolean));
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
+  avatarPick:()=>{ const i=$("#avatarIn"); i.value=""; i.click(); },
+  avatarFromFits:()=>{ S.avatarEdit={choosing:true}; render(); },
+  avatarFit:async t=>{ const f=S.fits.find(x=>x.id===t.dataset.id); if(!f) return;
+    const d=await sb.storage.from("fits").download(f.orig_path||f.image_path); if(d.error){ toast("Couldn't load that photo."); return; }
+    openAvatarEditor(d.data, true); },
+  avatarCancel:()=>{ if(S.avatarEdit&&S.avatarEdit.busy) return; S.avatarEdit=null; render(); },
+  avatarSave:()=>saveAvatar(),
   hookMore:t=>{ const o=S.hookOpen||(S.hookOpen=new Set()); o.has(t.dataset.id)?o.delete(t.dataset.id):o.add(t.dataset.id); render(); },
   chatLine:t=>{ if(S.share){ S.share.chatTopic=t.dataset.line; render(); } },
   endChat:t=>endChat(t.dataset.id),
@@ -1272,6 +1347,7 @@ document.addEventListener("input", e=>{
   else if(t.dataset.plugI!=null&&S.share){ S.share.plugs[t.dataset.plugI][t.dataset.field]=t.value;
     if(t.dataset.field==="brand"){ const it=curFit()?.items?.[t.dataset.plugI]; const hint=t.parentElement?.querySelector("p.small"); if(hint&&it) hint.textContent=`Friends get a Shop it button that searches for ${[t.value.trim(),it.label].filter(Boolean).join(" ")}.`; } }
   else if(t.id==="codeIn") S.codeIn=t.value;
+  else if(t.id==="avatarZoom"&&S.avatarEdit){ S.avatarEdit.zoom=Number(t.value)/100; drawAvatar(); }
   else if(t.id==="handleIn") S.handleIn=t.value;
   else if(t.id==="goalIn") S.goalIn=t.value;
   else if(t.id==="itemLabel") (S.itemEdit||(S.itemEdit={})).label=t.value;
@@ -1279,6 +1355,7 @@ document.addEventListener("input", e=>{
 document.addEventListener("change", e=>{
   const t=e.target;
   if(t.id==="photoIn") startFlow(t.files&&t.files[0]);
+  else if(t.id==="avatarIn"){ const f=t.files&&t.files[0]; if(f) openAvatarEditor(f,false); }
   else if(t.dataset.itemType!=null){ curFit().items[t.dataset.itemType].type=t.value; S.itemsDirty=true; const b=$("#saveItemsBtn"); if(b) b.hidden=false; }
   else if(t.id==="keepBg"&&S.flow){ S.flow.keepBg=t.checked; render(); }
   else if(t.id==="buyRecs") setBuyRecs(t.checked);
@@ -1296,7 +1373,7 @@ async function onSession(session){
   S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home"; S.socialAt=0; S.mineAt=0;
   // Switching accounts: nothing typed or loaded for the last person carries over.
   Object.assign(S,{flow:null, share:null, fitId:null, itemId:null, hearts:{}, phones:{}, myPhone:"", chatReady:false, palettes:{}, swatchSeen:{}, codeIn:"", handleIn:null, phoneIn:null, friendMsg:"",
-    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
+    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, avatarEdit:null, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
   if(!uid){ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); return; }
   render();
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
