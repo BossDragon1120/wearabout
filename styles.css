@@ -370,3 +370,11 @@ img.avatar{display:block;background:var(--chip)}
 .badgeicons{font-size:16px;letter-spacing:2px;opacity:.9}
 .post .love{margin-top:2px}
 .ovsub{display:block;font-size:11px;font-weight:500;opacity:.7;margin-top:1px}
+
+/* Heart tucked into the photo's top corner */
+.heart.onphoto{position:absolute;top:10px;right:10px;padding:6px 10px;gap:5px;border:0;color:#fff;font-size:13px;
+  background:rgba(28,28,30,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.heart.onphoto svg{width:18px;height:18px}
+.heart.onphoto.on{color:#ff5a6e;background:rgba(255,255,255,.88)}
+.heart.onphoto.on span{color:#1b1b1b}
+.post .head .headtext .link{padding:0;margin-left:2px}
