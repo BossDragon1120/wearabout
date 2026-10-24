@@ -33,6 +33,7 @@ create index fits_user_created on public.fits (user_id, created_at desc);
 create table public.user_settings (
   user_id uuid primary key default auth.uid() references auth.users on delete cascade,
   style_goal text not null default '' check (char_length(style_goal) <= 40),
+  buy_recs boolean not null default true,       -- false = no purchase recommendations
   updated_at timestamptz not null default now()
 );
 

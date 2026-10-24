@@ -3,7 +3,8 @@
 //
 // Request: POST JSON from a signed-in user, with an "action":
 //   { action: "guess",    image }                                -> { category, confidence }          (Claude)
-//   { action: "analyze",  image, category, detail, goal, closet } -> { score, dims, low, review, ... } (Claude)
+//   { action: "analyze",  image, category, detail, goal, closet, buy } -> { score, dims, low, review, ... } (Claude)
+//      buy = false turns off the purchase recommendation
 //      closet = [{ id, label, type }] of the user's existing pieces; each returned item gets "match": an id or null
 //   { action: "backdrop", image, mode: "studio"|"themed", category, detail } -> finished image bytes (Photoroom)
 //   image = base64 JPEG of the outfit photo.
@@ -50,12 +51,12 @@ The user's closet so far (ref: label [type]):
 ${refs.map((r) => `${r.ref}: ${r.label} [${r.type}]`).join("\n")}
 For each item you list, add "match": the ref of the closet piece it is clearly the same garment as (same kind of item, color, material and details), or null if it is new or you are not sure. Only match when you are confident; a wrong match is worse than a duplicate. Never match two items in this outfit to the same ref.` : "";
 
-const analyzePrompt = (cat: string, detail: string, goal: string, closet = "") => `You are the stylist inside WearAbout, an outfit-logging app. The photo shows the user's outfit. They are dressed for: ${cat}${detail ? ` (${detail})` : ""}.
+const analyzePrompt = (cat: string, detail: string, goal: string, closet = "", buy = true) => `You are the stylist inside WearAbout, an outfit-logging app. The photo shows the user's outfit. They are dressed for: ${cat}${detail ? ` (${detail})` : ""}.
 
 Rules you must follow:
 1. Never make things up. Name a brand or model only when a visible logo or an unmistakable design makes you confident; otherwise describe the item by color, material and garment type. If you can't tell something, leave it out. A wrong guess is worse than not knowing.
 2. Be kind and helpful. Talk only about the clothes and styling, never the person's body, face, weight, age or looks. Frame everything as making a good look even better. Kind does not mean inflated: score honestly.
-3. Help, don't sell. Recommend a purchase only if one kind of item would add high value to this outfit for this occasion. Otherwise set "buy" to null.
+3. Help, don't sell. ${buy ? `Always give exactly one purchase idea: the single kind of item that would most improve this outfit for this occasion. Keep it practical and versatile, never a brand you made up.` : `The user has turned off purchase recommendations. Do not suggest buying anything; set "buy" to null.`}
 
 Score each dimension from 1 to 10 (one decimal allowed), with a note of at most 14 words:
 - occasion_fit: right formality and practicality for ${cat}
@@ -66,14 +67,14 @@ Score each dimension from 1 to 10 (one decimal allowed), with a note of at most 
 ${goal ? `- goal: how well the outfit moves toward the user's own style goal, "${goal}"
 ` : ""}
 "tweak": one change using things they likely already own (styling, tucking, cuffing, swapping a piece, layering, hair). It must improve the lowest-scoring dimension. "title" at most 8 words, "detail" at most 30 words, "dimension" is that dimension's key.
-"buy": null, or {"item": the kind of item, described specifically without inventing a brand, "why": at most 25 words, "search": a 3-7 word Google search for it}.
+${buy ? `"buy": {"item": the kind of item, described specifically without inventing a brand, "why": at most 25 words, "search": a 3-7 word Google search for it}.` : `"buy": null.`}
 "review": one or two warm, specific sentences on what works.
 "badges": 0 to 3 badges from this exact list, only when clearly earned (many outfits earn none): ${badgeNames(goal).join(", ")}.${goal ? ` "On goal" means the outfit clearly delivers on "${goal}".` : ""}
 "items": every wardrobe item you can see, excluding jewelry. Each {"label": specific, like "tan suede Chelsea boots", "type": one of ${ITEM_TYPES.join(", ")} (use "jacket" for jackets, blazers, shackets and cardigans worn open; "outerwear" for coats, parkas and puffers), "brand": a string only if you are confident, else null, "clear": true only if the whole piece is plainly visible and you are certain of its type, color and material; false if it is partly hidden (for example shoes under long pants), cropped, blurry, in shadow, or you are unsure}.
 If no outfit is visible, reply {"error":"<short reason>"} instead.${closet}
 
 Reply with only JSON in this shape:
-{"dims":{"occasion_fit":{"score":8,"note":"..."},"cohesion":{"score":7.5,"note":"..."},"proportion":{"score":7,"note":"..."},"color":{"score":8,"note":"..."},"details":{"score":6.5,"note":"..."}${goal ? ',"goal":{"score":7,"note":"..."}' : ""}},"review":"...","badges":[],"tweak":{"title":"...","detail":"...","dimension":"details"},"buy":null,"items":[{"label":"...","type":"top","brand":null,"clear":true${closet ? ',"match":null' : ""}}]}`;
+{"dims":{"occasion_fit":{"score":8,"note":"..."},"cohesion":{"score":7.5,"note":"..."},"proportion":{"score":7,"note":"..."},"color":{"score":8,"note":"..."},"details":{"score":6.5,"note":"..."}${goal ? ',"goal":{"score":7,"note":"..."}' : ""}},"review":"...","badges":[],"tweak":{"title":"...","detail":"...","dimension":"details"},"buy":${buy ? '{"item":"...","why":"...","search":"..."}' : "null"},"items":[{"label":"...","type":"top","brand":null,"clear":true${closet ? ',"match":null' : ""}}]}`;
 
 function parseJson(text: string) {
   try { return JSON.parse(text); } catch { /* fall through */ }
@@ -88,7 +89,7 @@ const clamp = (n: number, a: number, b: number) => Math.min(b, Math.max(a, n));
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // deno-lint-ignore no-explicit-any
-function normalize(a: any, goal: string, refMap: Record<string, string> = {}) {
+function normalize(a: any, goal: string, refMap: Record<string, string> = {}, buyOn = true) {
   if (!a || typeof a !== "object" || a.error || !a.dims) throw new Error(a?.error ? String(a.error) : "No outfit found");
   const dims: Record<string, { score: number; note: string }> = {};
   let total = 0, low = "";
@@ -102,7 +103,7 @@ function normalize(a: any, goal: string, refMap: Record<string, string> = {}) {
   const t = a.tweak ?? {};
   const tweak = t.title ? { title: String(t.title).slice(0, 90), detail: String(t.detail ?? "").slice(0, 260), dimension: dims[t.dimension] ? t.dimension : low } : null;
   const b = a.buy;
-  const buy = b && b.item ? { item: String(b.item).slice(0, 120), why: String(b.why ?? "").slice(0, 220), search: String(b.search ?? b.item).slice(0, 90) } : null;
+  const buy = buyOn && b && b.item ? { item: String(b.item).slice(0, 120), why: String(b.why ?? "").slice(0, 220), search: String(b.search ?? b.item).slice(0, 90) } : null;
   // deno-lint-ignore no-explicit-any
   const items = Array.isArray(a.items) ? a.items.filter((i: any) => i && i.label).slice(0, 20).map((i: any) => ({
     label: String(i.label).slice(0, 80), type: ITEM_TYPES.includes(i.type) ? i.type : "other", brand: i.brand ? String(i.brand).slice(0, 40) : null,
@@ -114,7 +115,7 @@ function normalize(a: any, goal: string, refMap: Record<string, string> = {}) {
   for (const it of items) { if (it.match) { if (used.has(it.match)) it.match = null; else used.add(it.match); } }
   const names = badgeNames(goal);
   const badges = Array.isArray(a.badges) ? [...new Set(a.badges.map(String).filter((n: string) => names.includes(n)))].slice(0, 3) : [];
-  return { score: round1(total), dims, low, review: String(a.review ?? "").slice(0, 320), tweak, buy, items, badges, goal };
+  return { score: round1(total), dims, low, review: String(a.review ?? "").slice(0, 320), tweak, buy, buyOff: !buyOn, items, badges, goal };
 }
 
 async function askClaude(key: string, model: string, image: string, prompt: string, maxTokens: number) {
@@ -206,7 +207,7 @@ Deno.serve(async (req) => {
   const { data: { user } } = token ? await admin.auth.getUser(token) : { data: { user: null } };
   if (!user) return json(401, { error: "Sign in again." });
 
-  let body: { action?: string; image?: string; mode?: string; category?: string; detail?: string; goal?: string; closet?: { id?: string; label?: string; type?: string }[] };
+  let body: { action?: string; image?: string; mode?: string; category?: string; detail?: string; goal?: string; buy?: boolean; closet?: { id?: string; label?: string; type?: string }[] };
   try { body = await req.json(); } catch { return json(400, { error: "Bad request." }); }
   if (!body.image || body.image.length > 8_000_000) return json(400, { error: "Missing or oversized photo." });
 
@@ -245,8 +246,9 @@ Deno.serve(async (req) => {
         const ref = `c${i + 1}`; refMap[ref] = String(c.id);
         return { ref, label: String(c.label).replace(/[\n\r]/g, " ").slice(0, 80), type: ITEM_TYPES.includes(String(c.type)) ? String(c.type) : "other" };
       });
-    const text = await askClaude(apiKey, model, body.image, analyzePrompt(category, detail, goal, closetBlock(refs)), 2400);
-    return json(200, normalize(parseJson(text), goal, refMap));
+    const buyOn = body.buy !== false;
+    const text = await askClaude(apiKey, model, body.image, analyzePrompt(category, detail, goal, closetBlock(refs), buyOn), 2400);
+    return json(200, normalize(parseJson(text), goal, refMap, buyOn));
   } catch (e) {
     const status = (e as { status?: number }).status;
     if (status === 429 || status === 529) return json(503, { error: "Claude is busy. Try again in a minute." });

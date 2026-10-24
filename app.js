@@ -39,7 +39,7 @@ const S = {
   profile:null, fits:[], recs:[], out:new Set(), inc:new Set(), people:{}, posts:[], hearts:{},
   urls:{},
   view:"home", filter:{cat:null,best:false},
-  flow:null, fitId:null, share:null, confirmDel:false, friendMsg:"", codeIn:"", handleIn:null, goal:"", goalEdit:false, goalIn:null,
+  flow:null, fitId:null, share:null, confirmDel:false, friendMsg:"", codeIn:"", handleIn:null, goal:"", goalEdit:false, goalIn:null, buyRecs:true, buyRecsReady:true, ideasFilter:"all",
   closet:[], closetReady:false, closetSort:"most", itemId:null, itemEdit:null, mergeTo:"", confirmRemove:false, fitBack:"home",
   auth:{step:"email", email:"", code:"", busy:false, msg:""},
 };
@@ -104,10 +104,11 @@ async function loadMine(){
     sb.from("fits").select("*").order("created_at",{ascending:false}).limit(1000),
     sb.from("saved_recs").select("*").order("created_at",{ascending:false}),
     sb.from("profiles").select("*").eq("id",S.uid).maybeSingle(),
-    sb.from("user_settings").select("style_goal").eq("user_id",S.uid).maybeSingle(),
+    sb.from("user_settings").select("*").eq("user_id",S.uid).maybeSingle(),
     sb.from("closet_items").select("*").order("created_at",{ascending:true}),
   ]);
   S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null; S.goal=(g.data&&g.data.style_goal)||"";
+  S.buyRecs=!(g.data && g.data.buy_recs===false); S.buyRecsReady=!g.data || ("buy_recs" in g.data);
   S.closetReady=!c.error; S.closet=c.data||[];
   await signUrls("fits", S.fits.map(x=>x.thumb_path));
 }
@@ -284,7 +285,7 @@ function scoreBlock(an, score, cat, fb, recAct){
       <div class="dims">${dims.map(([k,label,w])=>{ const d=an.dims[k]; if(k==="goal") label="Your goal: "+esc(an.goal); return `<div class="dim ${an.low===k?"low":""}"><div class="lbl"><span>${label}<em>${Math.round(w*100)}%</em></span><span>${Number(d.score).toFixed(1)}</span></div><div class="bar"><i style="width:${d.score*10}%"></i></div>${d.note?`<p>${esc(d.note)}</p>`:""}</div>`; }).join("")}</div></details>
     <div class="stack" style="gap:12px"><h3>Level it up</h3>
       ${an.tweak?recCard("tweak","Tweak",an.tweak.title,an.tweak.detail,fb.tweak,recAct):""}
-      ${an.buy?recCard("buy","Buy",an.buy.item,an.buy.why,fb.buy,recAct):`<div class="rec"><span class="kind">Buy</span><b>No need to buy anything for this look!</b></div>`}
+      ${an.buy?recCard("buy","Buy",an.buy.item,an.buy.why,fb.buy,recAct):an.buyOff?"":`<div class="rec"><span class="kind">Buy</span><b>No need to buy anything for this look!</b></div>`}
     </div>`;
 }
 function bgTile(key,label){
@@ -323,7 +324,7 @@ function runStyle(){
 }
 async function runAnalysis(f){
   f.analysis="loading"; if(S.flow===f) render();
-  try { f.analysis=await callFn("wear-about",{action:"analyze", image:f.b64, category:f.cat, detail:f.detail, goal:S.goal||"", closet:closetForAI()}); }
+  try { f.analysis=await callFn("wear-about",{action:"analyze", image:f.b64, category:f.cat, detail:f.detail, goal:S.goal||"", closet:closetForAI(), buy:S.buyRecs}); }
   catch(e){ f.analysis={score:null}; f.analysisErr=e.message; }
   if(S.flow===f && S.view==="flow") render();
 }
@@ -337,7 +338,7 @@ async function saveFit(share=false){
     await Promise.all([up(base+".jpg",main), up(base+"-thumb.jpg",thumb), sameAsOrig?null:up(base+"-orig.jpg",f.origBlob)]);
     const row={id, local_date:localDate(), category:f.cat, detail:f.detail||"", bg_choice:f.bg,
       image_path:base+".jpg", thumb_path:base+"-thumb.jpg", orig_path:sameAsOrig?base+".jpg":base+"-orig.jpg",
-      score:a?a.score:null, analysis:a?{dims:a.dims,low:a.low,review:a.review,tweak:a.tweak,buy:a.buy,badges:a.badges||[],goal:a.goal||""}:null, items:a?a.items:[],
+      score:a?a.score:null, analysis:a?{dims:a.dims,low:a.low,review:a.review,tweak:a.tweak,buy:a.buy,buyOff:!!a.buyOff,badges:a.badges||[],goal:a.goal||""}:null, items:a?a.items:[],
       rec_fb:a?(f.recFb||{}):{}};
     row.items = await linkItems(row.items);
     const { data, error } = await sb.from("fits").insert(row).select().single();
@@ -490,15 +491,27 @@ async function toggleHeart(id){
 
 /* --- ideas (hearted recs) --- */
 function viewSaved(){
-  let out=`<div class="stack"><h2>Ideas</h2>`;
+  const list=S.recs.filter(r=>S.ideasFilter==="all"||r.kind===S.ideasFilter);
+  let out=`<div class="stack"><h2>Ideas</h2>
+    <label class="switchrow" for="buyRecs"><span><b>Buy recommendations</b><span class="small muted">${S.buyRecs?"Each new fit gets one thing to buy, plus a tweak.":"Off. New fits only get a styling tweak."}</span></span>
+      <input type="checkbox" id="buyRecs" class="switch" role="switch" ${S.buyRecs?"checked":""}></label>
+    <div class="chips" role="toolbar" aria-label="Filter ideas">${[["all","All"],["tweak","Tweaks"],["buy","Buys"]].map(([k,l])=>`<button class="chip ${S.ideasFilter===k?"on":""}" data-act="ideasFilter" data-f="${k}" aria-pressed="${S.ideasFilter===k}">${l} · ${k==="all"?S.recs.length:S.recs.filter(r=>r.kind===k).length}</button>`).join("")}</div>`;
   if(!S.recs.length) out+=`<div class="empty"><b>No ideas yet</b><p class="small muted">Heart a tweak or buy rec on any fit and it lands here, ready to look up.</p></div>`;
-  for(const r of S.recs){ const f=S.fits.find(x=>x.id===r.fit_id);
+  else if(!list.length) out+=`<div class="empty"><p class="small muted">No ${S.ideasFilter==="buy"?"buy":"tweak"} ideas saved yet.</p></div>`;
+  for(const r of list){ const f=S.fits.find(x=>x.id===r.fit_id);
     out+=`<div class="saved">${f?`<img src="${esc(url("fits",f.thumb_path))}" alt="">`:`<span></span>`}<div class="stack" style="gap:6px;min-width:0">
       <span class="tag" style="color:var(--accent)">${r.kind==="buy"?"Buy":"Tweak"} · ${esc(r.category||"")}</span><b>${esc(r.title)}</b>
       ${r.detail?`<p class="small muted">${esc(r.detail)}</p>`:""}
       <div class="row"><a class="btn sm" href="${esc(google(r.query||r.title))}" target="_blank" rel="noopener noreferrer">${r.kind==="buy"?"Find it on Google":"See it on Google"}</a>
       <button class="link small" data-act="removeRec" data-id="${esc(r.id)}">Remove</button></div></div></div>`; }
   return out+"</div>";
+}
+
+async function setBuyRecs(on){
+  const prev=S.buyRecs; S.buyRecs=on; render();
+  const { error } = await sb.from("user_settings").upsert({user_id:S.uid, buy_recs:on, updated_at:new Date().toISOString()});
+  if(error){ S.buyRecs=prev; render(); toast(/buy_recs/.test(error.message||"")?"This needs a quick database update (003_buy_recs.sql).":"Couldn't save that. Try again."); return; }
+  toast(on?"Buy recommendations on":"Buy recommendations off");
 }
 
 /* --- friends --- */
@@ -737,6 +750,7 @@ const ACT = {
     render(); },
   addBack:async t=>{ try{ await addFriend(t.dataset.uid); toast("You're now friends"); }catch{ toast("Couldn't add them back."); } render(); },
   signOut:async()=>{ await sb.auth.signOut(); },
+  ideasFilter:t=>{ S.ideasFilter=t.dataset.f; render(); },
   pickGoal:t=>{ S.goalIn=t.dataset.goal; render(); },
   editGoal:()=>{ S.goalEdit=true; S.goalIn=null; render(); setTimeout(()=>$("#goalIn")?.focus(),0); },
   saveGoal:async()=>{ const goal=String(S.goalIn ?? S.goal).trim().slice(0,40);
@@ -771,6 +785,7 @@ document.addEventListener("change", e=>{
   if(t.id==="photoIn") startFlow(t.files&&t.files[0]);
   else if(t.dataset.itemType!=null){ curFit().items[t.dataset.itemType].type=t.value; $("#saveItemsBtn").hidden=false; }
   else if(t.id==="keepBg"&&S.flow) S.flow.keepBg=t.checked;
+  else if(t.id==="buyRecs") setBuyRecs(t.checked);
   else if(t.id==="itemType") (S.itemEdit||(S.itemEdit={})).type=t.value;
   else if(t.id==="mergeTo") { S.mergeTo=t.value; render(); }
   else if(t.id==="blurOn"&&S.share){ S.share.blur.on=t.checked; render(); }
