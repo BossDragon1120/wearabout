@@ -669,9 +669,9 @@ function lovesRow(p){
 function chatOverlay(p){
   if(!chatOpen(p)) return "";
   const until=`<span class="ovuntil">until ${esc(untilTime(p.chat_until))}</span>`;
-  if(p.user_id===S.uid) return `<div class="chatov"><span class="ovline">💬 ${esc(p.chat_topic)}</span><span class="ovacts">${until}<button class="ovbtn ghost" data-act="endChat" data-id="${esc(p.id)}">End</button></span></div>`;
+  if(p.user_id===S.uid) return `<div class="chatov"><span class="ovline">💬 ${esc(p.chat_topic)}<span class="ovsub">until ${esc(untilTime(p.chat_until))}</span></span><span class="ovacts">${until}<button class="ovbtn ghost" data-act="endChat" data-id="${esc(p.id)}">End</button></span></div>`;
   const l=chatLinks(p); if(!l) return "";
-  return `<div class="chatov"><span class="ovline">💬 ${esc(p.chat_topic)}</span><span class="ovacts">${until}<a class="ovbtn" href="${esc(l.text)}">Text</a><a class="ovbtn ghost" href="${esc(l.call)}">Call</a></span></div>`;
+  return `<div class="chatov"><span class="ovline">💬 ${esc(p.chat_topic)}<span class="ovsub">until ${esc(untilTime(p.chat_until))}</span></span><span class="ovacts">${until}<a class="ovbtn" href="${esc(l.text)}">Text</a><a class="ovbtn ghost" href="${esc(l.call)}">Call</a></span></div>`;
 }
 async function endChat(id){
   const p=S.posts.find(x=>x.id===id); if(!p) return; const prev=p.chat_until;
