@@ -355,11 +355,14 @@ function firstPostCard(){
 function viewHome(){
   const st=streakInfo(), f=S.filter;
   const title = st.n ? `🔥 ${st.n}-day streak` : "Log today's fit";
-  const sub = st.loggedToday ? "Today's fit is in. Add another anytime." : st.n ? "Keep your streak alive — what are you wearing?" : "Start your streak — what are you wearing?";
+  const flash = S.homeFlash && Date.now()<S.homeFlash.until ? S.homeFlash.text : null;
+  const sub = flash || (st.loggedToday ? "Today's fit is in. Add another anytime." : st.n ? "Keep your streak alive — what are you wearing?" : "Start your streak — what are you wearing?");
   if(S.loaded && !S.fits.length && !S.welcomeSkipped) return welcomeCard();
   const nudge = S.loaded && S.fits.length && mutual().length && neverPosted() && !S.nudgeDismissed;
   // Right after a save, let the save message have the moment; the nudge shows next time you're here.
-  let out=(nudge && Date.now()>(S.nudgeAfter||0) ? firstPostCard() : "")+`<button class="logbanner" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
+  const offer = S.shareOffer && S.fits.find(x=>x.id===S.shareOffer);
+  let out=(nudge && !S.nudgeHold ? firstPostCard() : "")+`<button class="logbanner ${flash?"flash":""}" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
+    ${offer?`<div class="offer"><span>Love this one? Show your friends.</span><button class="btn sm primary" data-act="shareOffer">Share it</button><button class="iconbtn" data-act="dismissOffer" aria-label="Not now">${ICON.x}</button></div>`:""}
     <div class="countrow"><span class="count">${S.fits.length}</span><span class="countlbl">Outfit${S.fits.length===1?"":"s"} logged</span></div>
     ${goalRow()}
     <div class="chips" role="toolbar" aria-label="Filters" style="margin-top:12px">
@@ -518,21 +521,23 @@ async function saveFit(share=false){
     S.urls["fits:"+row.image_path]=f.comps[f.bg].url; S.urls["fits:"+row.thumb_path]=URL.createObjectURL(thumb);
     Promise.all(["tweak","buy"].filter(kind=>a && (f.recFb||{})[kind]==="up").map(kind=>saveIdea(data, kind).catch(console.error)))
       .then(()=>softRender(["saved"]));
-    // Land on Fits so you see the new card at the top and the streak go up. Clear filters so it's visible.
-    S.nudgeAfter = Date.now()+6000;   // let the save message have the moment before any share nudge
     S.fits=[data,...S.fits]; S.flow=null; S.fitId=id; S.fitBack="home"; S.confirmDel=false;
-    if(!share){ S.view="home"; S.filter={cat:null,best:false}; S.justSaved=id; render(); scrollTo(0,0); S.justSaved=null; }
     const n=streakInfo().n, newNote=added?` · ${added} new piece${added===1?"":"s"} in your Closet`:"";
     const savedMsg=(n>1?`Saved · ${n}-day streak`:"Saved · streak started")+newNote;
     const firstFit = S.fits.length===1, nudging = mutual().length && neverPosted() && !S.nudgeDismissed;
+    if(!share){
+      // Land on Fits: the new card glows, and the streak banner itself carries the save message,
+      // so nothing floats over the page. A strong score with friends to show gets a "Share it" line under the banner.
+      // The banner title already shows the streak, so the message just confirms the save.
+      S.homeFlash={ text: firstFit ? "🎉 First fit logged · welcome to WearAbout!" : (n>1?"Saved ✓":"Saved ✓ · streak started")+newNote, until: Date.now()+5000 };
+      S.shareOffer = !firstFit && a && a.score>=7.5 && mutual().length && !nudging ? id : null;
+      S.nudgeHold = true;   // no share nudge popping in during this visit
+      S.view="home"; S.filter={cat:null,best:false}; S.justSaved=id; render(); scrollTo(0,0); S.justSaved=null;
+      setTimeout(()=>{ if(S.homeFlash && Date.now()>=S.homeFlash.until){ S.homeFlash=null; softRender(["home"]); } }, 5100);
+    }
     if(firstFit) celebrate();
     // Sharing: hold the message until you post or back out, so it never sits on top of the share screen.
-    if(!share){
-      if(firstFit) toast("🎉 First fit logged · welcome to WearAbout!");
-      // A strong score and friends to show: offer to share right then.
-      else if(a && a.score>=7.5 && mutual().length && !nudging) toast(savedMsg+" · love this one?", ()=>{ S.fitId=id; S.shareBack="home"; return openShare(main); }, "Share it");
-      else toast(savedMsg);
-    }
+    if(!share){ /* message shown in the banner */ }
     else { S.shareBack="home"; S.savedMsg=savedMsg; await openShare(main);
       if(S.view!=="share"){ S.view="home"; render(); toast(savedMsg); S.savedMsg=null; } }   // photo didn't load: still land on Fits
   } catch(e){ console.error(e); f.saving=false; render(); toast("Couldn't save. Check your connection and try again."); }
@@ -1339,7 +1344,7 @@ document.addEventListener("touchend",()=>{
 
 /* ---------- actions ---------- */
 const ACT = {
-  nav:t=>{ S.view=t.dataset.view; if(S.view==="feed"){ seenSet("feed"); S.dotFeed=false; } if(S.view==="friends"){ seenSet("friends"); S.dotFriends=false; } S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
+  nav:t=>{ S.nudgeHold=false; S.shareOffer=null; S.homeFlash=null; S.view=t.dataset.view; if(S.view==="feed"){ seenSet("feed"); S.dotFeed=false; } if(S.view==="friends"){ seenSet("friends"); S.dotFriends=false; } S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
     if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
   log:()=>{ S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
   changePhoto:()=>{ S.replacing=true; const i=$("#photoIn"); i.value=""; i.click(); },
@@ -1394,6 +1399,8 @@ const ACT = {
   pushOn:()=>pushOn(),
   skipWelcome:()=>{ S.welcomeSkipped=true; render(); },
   dismissNudge:()=>{ S.nudgeDismissed=true; render(); },
+  shareOffer:()=>{ const x=S.fits.find(f=>f.id===S.shareOffer); S.shareOffer=null; if(!x) return; S.fitId=x.id; S.shareBack="home"; openShare(); },
+  dismissOffer:()=>{ S.shareOffer=null; render(); },
   shareLatest:()=>{ const x=S.fits[0]; if(!x) return; S.fitId=x.id; S.shareBack="home"; openShare(); },
   pushOff:()=>pushOff(),
   avatarPick:()=>{ const i=$("#avatarIn"); i.value=""; i.click(); },
