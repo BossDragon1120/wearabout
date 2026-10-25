@@ -408,3 +408,6 @@ img.avatar{display:block;background:var(--chip)}
 /* Share offer under the banner after a strong score */
 .offer{display:flex;align-items:center;gap:10px;margin-top:10px;padding:8px 8px 8px 14px;border-radius:16px;background:color-mix(in srgb,var(--accent) 9%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);font-size:15px;font-weight:600}
 .offer span{flex:1;min-width:0}
+
+/* Friend code in the profile panel: sized to fit any phone */
+.code.codesm{font-size:28px;letter-spacing:.12em;min-width:0}
