@@ -511,3 +511,19 @@ img.avatar{display:block;background:var(--chip)}
 .ia-faces{position:absolute;left:14px;top:34px;display:flex}
 .ia-faces i{width:34px;height:34px;border-radius:50%;border:3px solid var(--surface);margin-left:-10px;background:var(--accent)}
 .ia-faces i:nth-child(2){background:var(--gold)}.ia-faces i:nth-child(3){background:#4aa564}
+/* Feed: Instagram-style posts. No card frame; on phones the photo runs edge to edge. */
+.post{background:transparent;border:0;border-radius:0}
+.post .head{padding:6px 0 8px}
+.post .hook{padding:0 0 10px}
+.post .body{padding:10px 0 4px}
+.post .postfoot{padding-inline:0}
+.post+.post{margin-top:10px}
+.post .photo-wrap img.main{border-radius:6px}
+.post .photo-wrap:has(+.chatov) img.main{border-radius:6px 6px 0 0}
+.post .chatov{border-radius:0 0 6px 6px}
+@media (max-width:640px){
+  .post{overflow:visible}
+  .post .photo-wrap,.post .chatov{width:100vw;margin-left:calc(50% - 50vw);margin-right:0}
+  .post .photo-wrap img.main,.post .chatov{border-radius:0!important}
+  .post .chatov{padding-inline:max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));box-sizing:border-box}
+}
