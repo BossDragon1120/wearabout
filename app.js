@@ -41,7 +41,7 @@ const ICON = {
 };
 
 /* ---------- state ---------- */
-const S = {
+const S = { imgOk:{}, imgLoading:{},
   uid:null, email:"", loaded:false,
   profile:null, fits:[], recs:[], out:new Set(), inc:new Set(), people:{}, posts:[], hearts:{},
   urls:{},
@@ -93,11 +93,20 @@ function displayName(id){ if(id===S.uid) return "You"; return (S.people[id] && S
 // A friend's photo when they've added one, otherwise their colored initial.
 function avatar(id, cls=""){
   const pr=id===S.uid?S.profile:S.people[id], u=pr&&pr.avatar_path&&url("avatars",pr.avatar_path);
-  if(u) return `<img class="avatar ${cls}" src="${esc(u)}" alt="">`;
+  // Show a photo only once it has fully loaded, so it never appears half-drawn; until then, the color circle.
+  if(u && S.imgOk[u]) return `<img class="avatar ${cls}" src="${esc(u)}" alt="">`;
+  if(u) preloadAvatar(u);
   const name=id===S.uid?((S.profile&&S.profile.handle)||""):displayName(id);
   // No name yet: a neutral person shape instead of a confusing letter.
   if(!name.trim()) return `<span class="avatar noname ${cls}" style="background:${avatarColor(id)}"><svg viewBox="0 0 24 24" width="62%" height="62%" fill="currentColor" aria-hidden="true"><circle cx="12" cy="8.5" r="4.2"/><path d="M3.8 21c.9-4.3 4.2-6.8 8.2-6.8s7.3 2.5 8.2 6.8z"/></svg></span>`;
   return `<span class="avatar ${cls}" style="background:${avatarColor(id)}">${esc(name.slice(0,1).toUpperCase())}</span>`;
+}
+function preloadAvatar(u){
+  if(S.imgLoading[u]) return; S.imgLoading[u]=true;
+  const im=new Image(); im.src=u;
+  (im.decode?im.decode():new Promise((res,rej)=>{ im.onload=res; im.onerror=rej; }))
+    .then(()=>{ S.imgOk[u]=true; clearTimeout(S.avT); S.avT=setTimeout(()=>softRender(["feed","friends","profile","home","share"]),30); })
+    .catch(()=>{});   // a broken photo just keeps the color circle
 }
 function avatarColor(id){ let h=0; for(const c of String(id)) h=(h*31+c.charCodeAt(0))>>>0; return `hsl(${h%360} 42% 46%)`; }
 
