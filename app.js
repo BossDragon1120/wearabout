@@ -858,12 +858,13 @@ async function toggleHeart(id){
 function viewSaved(){
   const list=S.recs.filter(r=>S.ideasFilter==="all"||r.kind===S.ideasFilter);
   const nbuy=S.recs.filter(r=>r.kind==="buy").length;
-  let out=`<div class="stack"><div class="row"><h2>Recs</h2><span class="spacer"></span>${nbuy?`<button class="btn sm" data-act="shareBuys">${ICON.share} Share buy list</button>`:""}</div>
+  let out=`<div class="stack"><div class="row"><h2>Recs</h2><span class="spacer"></span>${nbuy?`<button class="btn sm" data-act="shareBuys">${ICON.share} Share wishlist</button>`:""}</div>
     <label class="switchrow" for="buyRecs"><span><b>Buy recommendations</b><span class="small muted">${S.buyRecs?"Each new fit gets one thing to buy, plus a tweak.":"Off. New fits only get a styling tweak."}</span></span>
       <input type="checkbox" id="buyRecs" class="switch" role="switch" ${S.buyRecs?"checked":""}></label>
     <div class="chips" role="toolbar" aria-label="Filter ideas">${[["all","All"],["tweak","Tweaks"],["buy","Buys"]].map(([k,l])=>`<button class="chip ${S.ideasFilter===k?"on":""}" data-act="ideasFilter" data-f="${k}" aria-pressed="${S.ideasFilter===k}">${l} · ${k==="all"?S.recs.length:S.recs.filter(r=>r.kind===k).length}</button>`).join("")}</div>`;
   if(!S.recs.length) out+=`<div class="empty"><b>No recs yet</b><p class="small muted">Heart a tweak or buy rec on any fit and it lands here, ready to look up.</p></div>`;
   else if(!list.length) out+=`<div class="empty"><p class="small muted">No ${S.ideasFilter==="buy"?"buy":"tweak"} ideas saved yet.</p></div>`;
+  out+=wishSheet();
   // A wallet-style stack: slim cards that overlap; tap one to open it.
   if(list.length){
     out+=`<div class="recstack">`;
@@ -881,6 +882,93 @@ function viewSaved(){
     out+=`</div>`;
   }
   return out+"</div>";
+}
+
+/* --- wishlist card: a picture of your saved buys to send to friends --- */
+const WISH_NOTES=["Gift ideas, if you're wondering 🎁","Help me pick?","Shopping date? 🛍️"];
+const wishItems=()=>S.buyShare?S.recs.filter(r=>r.kind==="buy"&&S.buyShare.sel.has(r.id)):[];
+function wishSheet(){
+  const b=S.buyShare; if(!b) return "";
+  const buys=S.recs.filter(r=>r.kind==="buy"), n=b.sel.size;
+  return `<div class="sheetback" data-act="wishClose"></div><div class="sheet wishsheet" role="dialog" aria-label="Share your wishlist">
+    <div class="row"><h3 style="margin:0">Share your wishlist</h3><span class="spacer"></span><button class="iconbtn" data-act="wishClose" aria-label="Close">${ICON.x}</button></div>
+    <div class="wishprev">${b.preview?`<img id="wishPrev" src="${b.preview}" alt="Preview of your wishlist card">`:`<div class="wishprev-wait" id="wishPrev">Making your card…</div>`}</div>
+    <div class="field"><label for="wishNoteIn">Add a note</label>
+      <input class="input" id="wishNoteIn" maxlength="60" value="${esc(b.note)}" placeholder="Say something to your friends">
+      <div class="chips wishnotes">${WISH_NOTES.map(t=>`<button class="chip ${b.note===t?"on":""}" data-act="wishNote" data-note="${esc(t)}">${esc(t)}</button>`).join("")}</div></div>
+    ${buys.length>1?`<div class="field"><span class="small" style="font-weight:600">What's on it</span><div class="wishpick">${buys.map(r=>`<button class="wishitem ${b.sel.has(r.id)?"on":""}" data-act="wishToggle" data-id="${esc(r.id)}" aria-pressed="${b.sel.has(r.id)}"><span class="wcheck" aria-hidden="true">${b.sel.has(r.id)?"✓":""}</span>${esc(r.title)}</button>`).join("")}</div></div>`:""}
+    <button class="btn primary block lg" data-act="wishSend" ${n?"":"disabled"}>${ICON.share} Share${n>1?` ${n} items`:""}</button></div>`;
+}
+const loadImg=src=>new Promise(res=>{ if(!src) return res(null); const im=new Image(); im.crossOrigin="anonymous"; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; });
+function wrapText(ctx,text,maxW,maxLines){
+  const words=String(text).split(/\s+/), lines=[]; let line="";
+  for(const w of words){ const t=line?line+" "+w:w; if(ctx.measureText(t).width>maxW&&line){ lines.push(line); line=w; } else line=t; }
+  if(line) lines.push(line);
+  if(lines.length>maxLines){ lines.length=maxLines; let l=lines[maxLines-1]; while(l&&ctx.measureText(l+"…").width>maxW) l=l.slice(0,-1); lines[maxLines-1]=l.trimEnd()+"…"; }
+  return lines;
+}
+async function wishCanvas(){
+  const items=wishItems(), W=1080, c=document.createElement("canvas");
+  // Fewer items → bigger rows and a square card; more items → a taller 4:5 card.
+  const nShow=Math.min(items.length,items.length>5?4:5), rowFit=nShow<=2?230:nShow===3?210:190, note0=(S.buyShare?.note||"").trim();
+  const H=Math.max(1080,Math.min(1350,(note0?420:350)+nShow*(rowFit+18)+(items.length>nShow?60:0)+150)); c.width=W; c.height=H;
+  const x=c.getContext("2d"); try{ await document.fonts.ready; }catch{}
+  const DISP="Montserrat, 'Helvetica Neue', Arial, sans-serif", BODY="-apple-system, 'Helvetica Neue', Arial, sans-serif";
+  const g=x.createLinearGradient(0,0,W,H); g.addColorStop(0,"#F7F1E8"); g.addColorStop(1,"#ECE6FA"); x.fillStyle=g; x.fillRect(0,0,W,H);
+  const rr=(X,Y,w,h,r)=>{ x.beginPath(); x.roundRect?x.roundRect(X,Y,w,h,r):x.rect(X,Y,w,h); };
+  // header
+  const name=String(S.profile?.handle||"").trim().split(/\s+/)[0];
+  x.fillStyle="#5B3FD0"; x.font=`800 30px ${DISP}`; x.fillText("🛍️  WISHLIST",80,120);
+  x.fillStyle="#1E1C1A"; x.font=`800 76px ${DISP}`;
+  const title=name?`${name}’s wishlist`:"My wishlist"; let y=210;
+  for(const l of wrapText(x,title,W-160,2)){ x.fillText(l,80,y); y+=86; }
+  const note=(S.buyShare?.note||"").trim();
+  if(note){ x.fillStyle="#5A5550"; x.font=`italic 500 40px ${BODY}`; for(const l of wrapText(x,note,W-160,2)){ x.fillText(l,80,y+6); y+=52; } y+=10; }
+  y+=24;
+  // items: one card per row, with the look it goes with
+  const show=items.slice(0,items.length>5?4:5), more=items.length-show.length;
+  const rowH=Math.min(rowFit,Math.floor((H-y-150-(more?60:0))/Math.max(show.length,1))-18);
+  const thumbs=await Promise.all(show.map(r=>{ const f=S.fits.find(z=>z.id===r.fit_id); return loadImg(f&&url("fits",f.thumb_path)); }));
+  show.forEach((r,k)=>{
+    const top=y+k*(rowH+18);
+    x.save(); x.shadowColor="rgba(40,30,20,.10)"; x.shadowBlur=24; x.shadowOffsetY=6; x.fillStyle="#FFFFFF"; rr(80,top,W-160,rowH,28); x.fill(); x.restore();
+    const tw=Math.round(rowH*0.78), th=rowH-28, tx=94, ty=top+14;
+    x.save(); rr(tx,ty,tw,th,18); x.clip();
+    const im=thumbs[k];
+    if(im){ const s=Math.max(tw/im.width,th/im.height), iw=im.width*s, ih=im.height*s; x.drawImage(im,tx+(tw-iw)/2,ty+(th-ih)/2,iw,ih); }
+    else { x.fillStyle="#F1E9DC"; x.fillRect(tx,ty,tw,th); x.font=`${Math.round(th*.4)}px ${BODY}`; x.textAlign="center"; x.textBaseline="middle"; x.fillText("🛍️",tx+tw/2,ty+th/2); x.textAlign="left"; x.textBaseline="alphabetic"; }
+    x.restore();
+    const tx2=tx+tw+32, maxW=W-80-32-tx2;
+    x.fillStyle="#1E1C1A"; x.font=`700 ${rowH>200?46:rowH>160?42:36}px ${BODY}`;
+    const lines=wrapText(x,r.title,maxW,2), lh=rowH>160?50:44, sub=r.category?`for my ${r.category.toLowerCase()} looks`:"";
+    let ty2=top+rowH/2-((lines.length*lh+(sub?40:0))/2)+lh-10;
+    for(const l of lines){ x.fillText(l,tx2,ty2); ty2+=lh; }
+    if(sub){ x.fillStyle="#8C8882"; x.font=`500 30px ${BODY}`; x.fillText(wrapText(x,sub,maxW,1)[0],tx2,ty2+2); }
+  });
+  if(more){ x.fillStyle="#5A5550"; x.font=`600 34px ${BODY}`; x.fillText(`+ ${more} more`,96,y+show.length*(rowH+18)+40); }
+  // footer
+  x.fillStyle="#8C8882"; x.font=`600 28px ${BODY}`; x.textAlign="center"; x.fillText("Made with WearAbout",W/2,H-64); x.textAlign="left";
+  return c;
+}
+async function wishPreview(){
+  const b=S.buyShare; if(!b) return; const my=(S.wishSeq=(S.wishSeq||0)+1);
+  const c=await wishCanvas(); if(my!==S.wishSeq||S.buyShare!==b) return;
+  try{ b.preview=c.toDataURL("image/jpeg",.7); }catch{ b.preview=""; }   // a tainted canvas (no image permission) just skips the preview
+  const el=$("#wishPrev"); if(el&&el.tagName==="IMG") el.src=b.preview; else render();
+}
+async function sendWishlist(){
+  const b=S.buyShare, items=wishItems(); if(!b||!items.length) return;
+  const note=b.note.trim(), text=(note?note+"\n\n":"")+"On my wishlist:\n"+items.map(r=>"• "+r.title).join("\n");
+  let blob=null; try{ const c=await wishCanvas(); blob=await new Promise(r=>c.toBlob(r,"image/png")); }catch{}
+  const file=blob&&new File([blob],"wishlist.png",{type:"image/png"});
+  try{
+    if(file&&navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file], text}); S.buyShare=null; render(); return; }
+    if(navigator.share){ await navigator.share({title:"My wishlist", text}); S.buyShare=null; render(); return; }
+  }catch(e){ if(e&&e.name==="AbortError") return; }
+  // No share sheet (e.g. a computer): save the picture and copy the message.
+  if(blob){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="wishlist.png"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }
+  try{ await navigator.clipboard.writeText(text); }catch{}
+  S.buyShare=null; render(); toast(blob?"Card saved and message copied":"Message copied. Paste it into a message.");
 }
 
 async function setBuyRecs(on){
@@ -1685,12 +1773,13 @@ const ACT = {
     try { await navigator.clipboard.writeText(text); toast("Invite copied. Paste it into a message."); } catch { toast("Your link: "+link); }
   },
   // Send your saved buys as a plain list with a search link for each, e.g. to a friend or as gift ideas.
-  shareBuys:async()=>{
-    const buys=S.recs.filter(r=>r.kind==="buy"); if(!buys.length) return;
-    const text="My buy list from WearAbout:\n\n"+buys.map(r=>`• ${r.title}${r.detail?` (${r.detail.replace(/\s+/g," ").slice(0,90)}${r.detail.length>90?"…":""})`:""}\n  ${google(r.query||r.title)}`).join("\n\n");
-    try { if(navigator.share){ await navigator.share({title:"My buy list", text}); return; } } catch(e){ if(e && e.name==="AbortError") return; }
-    try { await navigator.clipboard.writeText(text); toast("Buy list copied. Paste it into a message."); } catch { toast("Couldn't copy the list on this device."); }
-  },
+  // Share your wishlist as a picture card (plus a short message), after picking items and adding a note.
+  shareBuys:()=>{ const buys=S.recs.filter(r=>r.kind==="buy"); if(!buys.length) return;
+    S.buyShare={sel:new Set(buys.map(r=>r.id)), note:"", preview:""}; render(); wishPreview(); },
+  wishClose:()=>{ S.buyShare=null; render(); },
+  wishToggle:t=>{ const b=S.buyShare, id=t.dataset.id; if(!b) return; b.sel.has(id)?b.sel.delete(id):b.sel.add(id); render(); wishPreview(); },
+  wishNote:t=>{ const b=S.buyShare; if(!b) return; b.note=b.note===t.dataset.note?"":t.dataset.note; render(); wishPreview(); },
+  wishSend:()=>sendWishlist(),
   copyCode:async()=>{ const c=S.profile&&S.profile.friend_code; try{ await navigator.clipboard.writeText(c); toast("Code copied"); }catch{ toast("Your code is "+c); } },
   addFriend:async()=>{ const code=S.codeIn.trim().toUpperCase(); if(!code) return;
     try { const { data, error } = await sb.rpc("find_by_code",{code}); if(error) throw error; const hit=(data||[])[0];
@@ -1738,6 +1827,7 @@ document.addEventListener("input", e=>{
   else if(t.id==="avatarZoom"&&S.avatarEdit){ zoomAvatar(Number(t.value)/100); }
   else if(t.id==="handleIn"){ S.handleIn=t.value; clearTimeout(S.nameT); S.nameT=setTimeout(saveName, 900); setNameStatus("…"); }
   else if(t.id==="goalIn") S.goalIn=t.value;
+  else if(t.id==="wishNoteIn"&&S.buyShare){ S.buyShare.note=t.value; clearTimeout(S.wishT); S.wishT=setTimeout(wishPreview,300); }
   else if(t.id==="itemLabel") (S.itemEdit||(S.itemEdit={})).label=t.value;
 });
 document.addEventListener("change", e=>{
