@@ -467,3 +467,16 @@ img.avatar{display:block;background:var(--chip)}
 .rechead{padding:10px 14px 24px}
 .rechead img,.recnoimg{width:34px;height:44px}
 .recbody{padding-left:60px}
+
+/* Friends: compact rows, and a "you" row that opens your profile */
+.person{padding:7px 0;gap:10px}
+.person .avatar{width:32px;height:32px;font-size:13px}
+.pline{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;white-space:nowrap;overflow:hidden}
+.pline b{overflow:hidden;text-overflow:ellipsis}
+.pline .small{overflow:hidden;text-overflow:ellipsis}
+.merow{width:100%;display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:16px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;text-align:left;cursor:pointer}
+.merow .pline{flex-direction:column;align-items:flex-start;gap:0}
+.merow.missing{background:color-mix(in srgb,var(--gold) 14%,var(--surface));border-color:color-mix(in srgb,var(--gold) 45%,transparent)}
+.merow.missing .small{color:var(--score-ink);font-weight:600}
+.merow .chev{font-size:24px;color:var(--muted);line-height:1}
+.welcome.setup .profilecard{margin:6px 0 10px;text-align:left}

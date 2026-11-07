@@ -153,7 +153,7 @@ async function loadMine(){
   S.closetReady=!c.error; S.closet=c.data||[];
   S.chatReady=!ph.error; S.myPhone=(ph.data&&ph.data.phone)||"";
   S.avatarReady=!!(S.profile && "avatar_path" in S.profile);
-  if(S.profile&&S.profile.avatar_path) signUrls("avatars",[S.profile.avatar_path]).then(()=>softRender(["friends","feed"])).catch(()=>{});
+  if(S.profile&&S.profile.avatar_path) signUrls("avatars",[S.profile.avatar_path]).then(()=>softRender(["friends","profile","feed"])).catch(()=>{});
   await signUrls("fits", [...S.fits.map(x=>x.thumb_path), ...S.closet.map(c=>c.crop_path).filter(Boolean)]);
   S.mineAt=Date.now();
 }
@@ -266,7 +266,7 @@ function render(){
   renderTabs();
   const v=S.view;
   const prev=S.renderedView; S.renderedView=v+"|"+(S.flow?S.flow.step:"")+"|"+(S.fitId||"")+"|"+(S.itemId||"");
-  const html = v==="flow"?(S.flow&&S.flow.step==="result"?viewResult():viewFlow()) : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
+  const html = v==="flow"?(S.flow&&S.flow.step==="result"?viewResult():viewFlow()) : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="profile"?viewProfile() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
   // A different screen starts fresh (so old open panels don't carry over); the same screen updates in place.
   if(prev!==S.renderedView) m.innerHTML=html; else setHTML(m, html);
   if(v==="share") drawShare();
@@ -288,7 +288,7 @@ function watchHero(){
 }
 function renderTabs(){
   const homeish=["home","fit","flow","share"].includes(S.view);
-  const on=id=>id==="home"?homeish:id==="closet"?["closet","item"].includes(S.view):S.view===id;
+  const on=id=>id==="home"?homeish:id==="closet"?["closet","item"].includes(S.view):id==="friends"?["friends","profile"].includes(S.view):S.view===id;
   const dot=id=>(id==="feed"&&S.dotFeed)||(id==="friends"&&S.dotFriends);
   const t=(id,label,icon)=>`<button class="tab ${on(id)?"on":""}" data-act="nav" data-view="${id}" aria-current="${on(id)?"page":"false"}" ${dot(id)?`aria-label="${label}, something new"`:""}>${icon}<span>${label}</span>${dot(id)?`<i class="tabdot" aria-hidden="true"></i>`:""}</button>`;
   setHTML($("#tabs"), t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("closet","Closet",ICON.closet)+t("saved","Recs",ICON.bulb)+t("friends","Friends",ICON.people));
@@ -356,6 +356,26 @@ function firstPostLine(){
   return pick(lines);
 }
 const neverPosted = () => S.postCount===0 && !S.posts.some(p=>p.user_id===S.uid);
+// New accounts: set your name and photo right after signing in, before the first fit.
+const setupKey=()=>"wa_setup_"+S.uid;
+// Once shown it stays up until you tap Continue or Skip (your name autosaves while you type).
+const needsSetup=()=>{ if(S.setupDone||!S.loaded||!S.profile) return false; if(S.inSetup) return true;
+  if(String(S.profile.handle||"").trim()) return false;
+  try{ if(localStorage.getItem(setupKey())) return false; }catch{}
+  return S.inSetup=true; };
+function setupCard(){
+  const p=S.profile;
+  return `<div class="welcome setup"><p class="welcome-kicker">Welcome to WearAbout</p><h2>First, how will friends know it's you?</h2>
+    <div class="profilecard">
+      ${S.avatarReady?`<button class="avatarbtn" data-act="avatarMenu" aria-label="${p.avatar_path?"Change your photo":"Add a photo"}">${avatar(S.uid,"xl")}<span class="camerabadge" aria-hidden="true">📷</span></button>
+        <button class="link small" data-act="avatarMenu">${p.avatar_path?"Change photo":"Add a photo (optional)"}</button>`:""}
+      <div class="field namefield"><label for="handleIn">Your name</label>
+        <input class="input" id="handleIn" maxlength="30" autocomplete="given-name" enterkeyhint="done" value="${esc(S.handleIn ?? p.handle ?? "")}" placeholder="Your first name">
+        <span class="small muted" id="nameStatus" aria-live="polite">${S.nameStatus||"Only your friends see this."}</span></div>
+    </div>
+    <button class="btn primary block lg" data-act="finishSetup">Continue</button><button class="link small" data-act="skipSetup">Skip for now</button>
+    ${avatarSheet()}</div>`;
+}
 function welcomeCard(){
   return `<div class="welcome"><p class="welcome-kicker">Welcome to WearAbout</p><h2>${esc(pick(FIRST_FIT_LINES))}</h2>
     <button class="btn primary block lg" data-act="log">📸 Snap today’s fit</button><button class="link small" data-act="skipWelcome">Skip for now</button></div>`;
@@ -371,6 +391,7 @@ function viewHome(){
   const kicker = st.n ? `🔥 ${st.n}-day streak` : "Start your streak";
   const headline = st.loggedToday ? "Today’s fit is in ✓" : st.n ? "What are you wearing today?" : "Show us today’s look";
   const sub = flash || (st.loggedToday ? "Changed outfits? Add another anytime." : st.n ? "Log it to keep your streak going." : "One photo starts your streak.");
+  if(needsSetup()) return setupCard();
   if(S.loaded && !S.fits.length && !S.welcomeSkipped) return welcomeCard();
   const nudge = S.loaded && S.fits.length && mutual().length && neverPosted() && !S.nudgeDismissed;
   // Right after a save, let the save message have the moment; the nudge shows next time you're here.
@@ -810,20 +831,27 @@ async function setBuyRecs(on){
 /* --- friends --- */
 function viewFriends(){
   const m=mutual(), pending=[...S.out].filter(id=>!S.inc.has(id)), incoming=[...S.inc].filter(id=>!S.out.has(id)), p=S.profile;
-  const person=(id,extra,action="")=>`<div class="person">${avatar(id)}<div style="flex:1;min-width:0"><b>${esc(displayName(id))}</b>${extra}</div>${action}</div>`;
-  const lastPost=id=>{ const x=S.posts.find(q=>q.user_id===id); return x?`<div class="small muted">Last shared ${esc(ago(x.created_at))}</div>`:""; };
+  // Compact rows: name and a short note on one line, so a long friends list fits on the screen.
+  const person=(id,extra,action="")=>`<div class="person">${avatar(id)}<div class="pline"><b>${esc(displayName(id))}</b>${extra?`<span class="small muted">${extra}</span>`:""}</div>${action}</div>`;
+  const lastPost=id=>{ const x=S.posts.find(q=>q.user_id===id); return x?`shared ${esc(ago(x.created_at))}`:""; };
   const missing = p && (!String(p.handle||"").trim() || (S.avatarReady && !p.avatar_path));
   return `<div class="stack"><div class="row"><h2>Friends</h2><span class="spacer"></span><button class="btn sm primary" data-act="invite" ${p?"":"disabled"}>Invite friends</button></div>
-    ${missing?`<button class="nudge profilenudge" data-act="goProfile">${avatar(S.uid)}<span class="nudge-text"><b>${!String(p.handle||"").trim()?"Add your name and photo":"Add a profile photo"}</b><span class="small muted">So friends know it’s you.</span></span><span class="small" style="font-weight:700;color:var(--accent)">Add ›</span></button>`:""}
-    ${incoming.length?`<div class="panel"><h3>Added you</h3>${incoming.map(id=>person(id,`<div class="small muted">Add them back to see each other's fits</div>`,`<button class="btn sm primary" data-act="addBack" data-uid="${esc(id)}">Add back</button>`)).join("")}</div>`:""}
+    <button class="merow ${missing?"missing":""}" data-act="nav" data-view="profile">${avatar(S.uid)}<span class="pline"><b>${esc(String(p&&p.handle||"").trim()||"You")}</b><span class="small ${missing?"":"muted"}">${missing?(!String(p&&p.handle||"").trim()?"Add your name and photo":"Add a profile photo"):"Profile, friend code and settings"}</span></span><span class="chev" aria-hidden="true">›</span></button>
+    ${incoming.length?`<div class="panel"><h3>Added you</h3>${incoming.map(id=>person(id,"wants to be friends",`<button class="btn sm primary" data-act="addBack" data-uid="${esc(id)}">Add back</button>`)).join("")}</div>`:""}
     <div class="panel"><h3>Your friends · ${m.length}</h3>${m.length?m.map(id=>person(id,lastPost(id))).join(""):`<p class="small muted">No friends yet. Tap <b>Invite friends</b>: when they sign up from your link, you're friends right away.</p>`}</div>
-    ${pending.length?`<div class="panel"><h3>Waiting on them</h3>${pending.map(id=>person(id,`<div class="small muted">They haven't added you back yet</div>`)).join("")}</div>`:""}
+    ${pending.length?`<div class="panel"><h3>Waiting on them</h3>${pending.map(id=>person(id,"hasn't added you back")).join("")}</div>`:""}
     <div class="panel"><h3>Add a friend by code</h3>
       <div class="row" style="flex-wrap:nowrap"><input class="input" id="codeIn" maxlength="8" value="${esc(S.codeIn)}" placeholder="Their code" autocapitalize="characters" style="text-transform:uppercase"><button class="btn sm primary" data-act="addFriend">Add</button></div>
       ${S.friendMsg?`<p class="small">${esc(S.friendMsg)}</p>`:""}
       <p class="small muted">With a code, you each add the other's. An invite link does both at once.</p>
     </div>
-    <div class="panel"><h3>Your profile</h3>
+  </div>`;
+}
+/* --- your profile (its own page, from the top of Friends) --- */
+function viewProfile(){
+  const p=S.profile;
+  return `<button class="back" data-act="nav" data-view="friends">${ICON.back} Friends</button><div class="stack"><h2>Profile</h2>
+    <div class="panel">
       <div class="profilecard">
         ${S.avatarReady?`<button class="avatarbtn" data-act="avatarMenu" aria-label="${p&&p.avatar_path?"Change your photo":"Add a photo"}">${avatar(S.uid,"xl")}<span class="camerabadge" aria-hidden="true">📷</span></button>
           <button class="link small" data-act="avatarMenu">${p&&p.avatar_path?"Change photo":"Add a photo"}</button>`:""}
@@ -862,10 +890,10 @@ function notifyPanel(){
 }
 async function checkPush(){
   if(!pushSupported()){ S.pushState="unsupported"; return; }
-  if(Notification.permission==="denied"){ S.pushState="denied"; softRender(["friends"]); return; }
+  if(Notification.permission==="denied"){ S.pushState="denied"; softRender(["friends","profile"]); return; }
   try { const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); S.pushState=sub?"on":"off"; }
   catch { S.pushState="off"; }
-  softRender(["friends"]);
+  softRender(["friends","profile"]);
 }
 async function pushOn(){
   if(S.pushBusy) return; S.pushBusy=true; render();
@@ -1533,6 +1561,10 @@ const ACT = {
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
   pushOn:()=>pushOn(),
+  finishSetup:async()=>{
+    if(!String(S.handleIn??S.profile?.handle??"").trim()){ setNameStatus("Add your first name, or skip for now."); $("#handleIn")?.focus(); return; }
+    clearTimeout(S.nameT); await saveName(); if(!String(S.profile?.handle||"").trim()) return; ACT.skipSetup(); },
+  skipSetup:()=>{ S.setupDone=true; S.inSetup=false; try{ localStorage.setItem(setupKey(),"1"); }catch{} render(); scrollTo(0,0); },
   skipWelcome:()=>{ S.welcomeSkipped=true; render(); },
   dismissNudge:()=>{ S.nudgeDismissed=true; render(); },
   shareOffer:()=>{ const x=S.fits.find(f=>f.id===S.shareOffer); S.shareOffer=null; if(!x) return; S.fitId=x.id; S.shareBack="home"; openShare(); },
@@ -1545,8 +1577,7 @@ const ACT = {
     S.avatarEdit={loading:true}; render();
     const d=await sb.storage.from("fits").download(f.orig_path||f.image_path); if(d.error){ S.avatarEdit=null; render(); toast("Couldn't load that photo. Try again."); return; }
     openAvatarEditor(d.data, true); },
-  goProfile:()=>{ const c=document.querySelector(".profilecard"); if(!c) return; c.scrollIntoView({behavior:"smooth",block:"center"});
-    if(!String(S.profile?.handle||"").trim()) setTimeout(()=>$("#handleIn")?.focus({preventScroll:true}),450); },
+  goProfile:()=>{ S.view="profile"; render(); scrollTo(0,0); },
   cropPick:t=>{ S.avatarEdit={cropChoosing:true, pieceId:t.dataset.id}; render(); },
   cropFit:t=>{ const a=S.avatarEdit, f=S.fits.find(x=>x.id===t.dataset.id); if(a&&f) openCropEditor(f, a.pieceId); },
   avatarMenu:()=>{ S.avatarEdit={menu:true}; render(); },
@@ -1658,7 +1689,7 @@ async function onSession(session){
   S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home"; S.socialAt=0; S.mineAt=0;
   // Switching accounts: nothing typed or loaded for the last person carries over.
   Object.assign(S,{flow:null, share:null, fitId:null, itemId:null, hearts:{}, phones:{}, myPhone:"", chatReady:false, palettes:{}, swatchSeen:{}, codeIn:"", handleIn:null, phoneIn:null, friendMsg:"",
-    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, avatarEdit:null, nameStatus:"", dotFeed:false, dotFriends:false, postCount:undefined, welcomeSkipped:false, nudgeDismissed:false, toldFriends:false, friendSince:{}, pushState:null, notifyReady:false, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
+    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, avatarEdit:null, nameStatus:"", setupDone:false, inSetup:false, dotFeed:false, dotFriends:false, postCount:undefined, welcomeSkipped:false, nudgeDismissed:false, toldFriends:false, friendSince:{}, pushState:null, notifyReady:false, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
   if(!uid){ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); return; }
   render();
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
