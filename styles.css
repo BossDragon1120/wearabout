@@ -480,3 +480,5 @@ img.avatar{display:block;background:var(--chip)}
 .merow.missing .small{color:var(--score-ink);font-weight:600}
 .merow .chev{font-size:24px;color:var(--muted);line-height:1}
 .welcome.setup .profilecard{margin:6px 0 10px;text-align:left}
+/* Until we know whether you've logged today (first load on this device), keep the banner's space but don't show a color that may change. */
+.logbanner.hero.pending{visibility:hidden}

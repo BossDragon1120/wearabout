@@ -208,10 +208,17 @@ function updateBadges(){
 
 /* ---------- streak ---------- */
 function streakInfo(){
-  const days=new Set(S.fits.map(f=>f.local_date)), today=localDate();
+  const today=localDate(), key="wa_streak_"+S.uid;
+  // Before your fits load, use what we knew last time, so the Fits banner doesn't flash purple and then turn light.
+  if(!S.loaded){ try{ const c=JSON.parse(localStorage.getItem(key)||"null");
+    if(c&&c.date===today) return {n:c.n, loggedToday:c.loggedToday};
+    if(c&&c.date===addDays(today,-1)) return {n:c.loggedToday?c.n:0, loggedToday:false}; }catch{} return {n:0, loggedToday:false, unknown:true}; }
+  const days=new Set(S.fits.map(f=>f.local_date));
   let d=days.has(today)?today:addDays(today,-1), n=0;
   while(days.has(d)){ n++; d=addDays(d,-1); }
-  return {n, loggedToday:days.has(today)};
+  const r={n, loggedToday:days.has(today)};
+  try{ localStorage.setItem(key, JSON.stringify({date:today, ...r})); }catch{}
+  return r;
 }
 
 
@@ -396,7 +403,7 @@ function viewHome(){
   const nudge = S.loaded && S.fits.length && mutual().length && neverPosted() && !S.nudgeDismissed;
   // Right after a save, let the save message have the moment; the nudge shows next time you're here.
   const offer = S.shareOffer && S.fits.find(x=>x.id===S.shareOffer);
-  let out=`<div class="logbanner hero ${flash?"flash":""} ${st.loggedToday?"done":""}" id="logHero">
+  let out=`<div class="logbanner hero ${flash?"flash":""} ${st.loggedToday?"done":""} ${st.unknown?"pending":""}" id="logHero">
       <span class="hero-kicker">${kicker}</span>
       <b class="hero-title">${headline}</b>
       <span class="lb-sub">${sub}</span>
