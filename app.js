@@ -565,7 +565,7 @@ async function saveFit(share=false){
 /* --- fit detail --- */
 const curFit=()=>S.fits.find(x=>x.id===S.fitId);
 function viewFit(){
-  const backTo=S.fitBack==="item"&&S.itemId?"item":"home", backLbl=backTo==="item"?"Closet item":"Fits";
+  const backTo=S.fitBack==="item"&&S.itemId?"item":S.fitBack==="saved"?"saved":"home", backLbl=backTo==="item"?"Closet item":backTo==="saved"?"Recs":"Fits";
   const x=curFit(); if(!x) return `<button class="back" data-act="nav" data-view="${backTo}">${ICON.back} ${backLbl}</button><p class="muted">This fit isn't available.</p>`;
   const an=x.analysis, fb=x.rec_fb||{};
   let out=`<button class="back" data-act="nav" data-view="${backTo}">${ICON.back} ${backLbl}</button><div class="stack" style="gap:20px">
@@ -781,12 +781,22 @@ function viewSaved(){
     <div class="chips" role="toolbar" aria-label="Filter ideas">${[["all","All"],["tweak","Tweaks"],["buy","Buys"]].map(([k,l])=>`<button class="chip ${S.ideasFilter===k?"on":""}" data-act="ideasFilter" data-f="${k}" aria-pressed="${S.ideasFilter===k}">${l} · ${k==="all"?S.recs.length:S.recs.filter(r=>r.kind===k).length}</button>`).join("")}</div>`;
   if(!S.recs.length) out+=`<div class="empty"><b>No recs yet</b><p class="small muted">Heart a tweak or buy rec on any fit and it lands here, ready to look up.</p></div>`;
   else if(!list.length) out+=`<div class="empty"><p class="small muted">No ${S.ideasFilter==="buy"?"buy":"tweak"} ideas saved yet.</p></div>`;
-  for(const r of list){ const f=S.fits.find(x=>x.id===r.fit_id);
-    out+=`<div class="saved" data-key="rec-${esc(r.id)}">${f?`<img src="${esc(url("fits",f.thumb_path))}" alt="">`:`<span></span>`}<div class="stack" style="gap:6px;min-width:0">
-      <span class="tag" style="color:var(--accent)">${r.kind==="buy"?"Buy":"Tweak"} · ${esc(r.category||"")}</span><b>${esc(r.title)}</b>
-      ${r.detail?`<p class="small muted">${esc(r.detail)}</p>`:""}
-      <div class="row"><a class="btn sm" href="${esc(google(r.query||r.title))}" target="_blank" rel="noopener noreferrer">${r.kind==="buy"?"Find it on Google":"See it on Google"}</a>
-      <button class="link small" data-act="removeRec" data-id="${esc(r.id)}">Remove</button></div></div></div>`; }
+  // A wallet-style stack: slim cards that overlap; tap one to open it.
+  if(list.length){
+    out+=`<div class="recstack">`;
+    for(const r of list){ const f=S.fits.find(x=>x.id===r.fit_id), open=S.openRec===r.id;
+      out+=`<div class="reccard ${r.kind} ${open?"open":""}" data-key="rec-${esc(r.id)}">
+        <button class="rechead" data-act="toggleRec" data-id="${esc(r.id)}" aria-expanded="${open}">
+          ${f?`<img src="${esc(url("fits",f.thumb_path))}" alt="">`:`<span class="recnoimg">${r.kind==="buy"?"🛍️":"✨"}</span>`}
+          <span class="rectext"><span class="reckind">${r.kind==="buy"?"Buy":"Tweak"}${r.category?` · ${esc(r.category)}`:""}</span><b>${esc(r.title)}</b></span>
+          <span class="recchev" aria-hidden="true">${open?"−":"+"}</span></button>
+        ${open?`<div class="recbody">${r.detail?`<p class="small">${esc(r.detail)}</p>`:""}
+          <div class="row"><a class="btn sm primary" href="${esc(google(r.query||r.title))}" target="_blank" rel="noopener noreferrer">${r.kind==="buy"?"Find it on Google":"See it on Google"}</a>
+          ${f?`<button class="btn sm" data-act="openFit" data-id="${esc(f.id)}" data-from="saved">See the fit</button>`:""}
+          <span class="spacer"></span><button class="link small muted" data-act="removeRec" data-id="${esc(r.id)}">Remove</button></div></div>`:""}
+      </div>`; }
+    out+=`</div>`;
+  }
   return out+"</div>";
 }
 
@@ -1559,6 +1569,7 @@ const ACT = {
   removePost:async t=>{ const p=S.posts.find(z=>z.id===t.dataset.id); const { error } = await sb.from("posts").delete().eq("id",t.dataset.id);
     if(error){ toast("Couldn't remove the post."); return; } if(p) sb.storage.from("posts").remove([p.image_path, ...(p.plugs||[]).map(g=>g.img).filter(Boolean)]);
     S.posts=S.posts.filter(z=>z.id!==t.dataset.id); render(); toast("Post removed"); },
+  toggleRec:t=>{ S.openRec = S.openRec===t.dataset.id ? null : t.dataset.id; render(); },
   removeRec:async t=>{ const r=S.recs.find(z=>z.id===t.dataset.id); if(!r) return;
     const { error } = await sb.from("saved_recs").delete().eq("id",r.id); if(error){ toast("Couldn't remove it."); return; }
     S.recs=S.recs.filter(z=>z.id!==r.id);
