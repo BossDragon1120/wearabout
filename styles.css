@@ -411,3 +411,19 @@ img.avatar{display:block;background:var(--chip)}
 
 /* Friend code in the profile panel: sized to fit any phone */
 .code.codesm{font-size:28px;letter-spacing:.12em;min-width:0}
+
+/* Profile card: big tappable photo, name that saves itself */
+.profilecard{display:flex;flex-direction:column;align-items:center;gap:10px;padding:4px 0 8px}
+.avatarbtn{position:relative;border:0;padding:0;background:none;border-radius:50%;cursor:pointer}
+.avatar.xl{width:104px;height:104px;font-size:40px}
+.camerabadge{position:absolute;right:-2px;bottom:-2px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:16px;background:var(--surface);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.namefield{width:100%;text-align:left}
+/* Framing screen */
+.avatarCanvas{width:min(100%,320px)}
+.loadingbox{display:grid;place-items:center}
+.zoomrow{display:flex;align-items:center;gap:12px}
+.zoomrow input[type=range]{flex:1;height:32px;accent-color:var(--accent)}
+.zoombtn{width:44px;height:44px;flex:none;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:24px;font-weight:600;line-height:1;color:var(--ink)}
+.btn.danger{color:#c4302b}
+.avatar.noname{color:rgba(255,255,255,.92)}
+.profilenudge{width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit}
