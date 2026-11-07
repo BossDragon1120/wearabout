@@ -363,6 +363,35 @@ function firstPostLine(){
   return pick(lines);
 }
 const neverPosted = () => S.postCount===0 && !S.posts.some(p=>p.user_id===S.uid);
+// New accounts: a short 3-card intro, then name and photo, then the first fit.
+const INTRO=[
+  {art:`<div class="ia ia-snap"><div class="ia-photo">${'<svg viewBox="0 0 60 90" aria-hidden="true"><circle cx="30" cy="18" r="10"/><path d="M14 38q16-10 32 0l-3 26H17Z"/><path d="M18 64h10l-1 24h-8Zm14 0h10l-1 24h-8Z"/></svg>'}</div>
+    <span class="ia-chip c1">White tee</span><span class="ia-chip c2">Denim jacket</span><span class="ia-chip c3">Sneakers</span></div>`,
+   title:"Snap today’s fit", text:"One photo a day. We give it a clean backdrop, and every piece you wear lands in your closet."},
+  {art:`<div class="ia ia-score"><div class="ia-ring"><b>8.6</b><span>style</span></div><span class="ia-chip c1">Great color balance</span><span class="ia-chip c2">Try a belt</span></div>`,
+   title:"Get a style score", text:"Quick feedback on what’s working, with tips toward your style goal. Your score is just for you."},
+  {art:`<div class="ia ia-share"><div class="ia-post"><div class="ia-postimg">${ICON.heart}</div><div class="ia-band">Let’s catch up ☕</div></div><div class="ia-faces"><i></i><i></i><i></i></div></div>`,
+   title:"Share with close friends", text:"Only friends you invite see your fits. Heart them, and chat about the ones you love."},
+];
+const introKey=()=>"wa_intro_"+S.uid;
+const needsIntro=()=>{ if(S.introDone||!S.loaded||S.fits.length) return false; if(S.inIntro) return true;
+  try{ if(localStorage.getItem(introKey())) return false; }catch{}
+  if(String(S.profile?.handle||"").trim()) return false; // existing accounts skip it
+  return S.inIntro=true; };
+function introCards(){
+  const i=S.introI||0, last=i===INTRO.length-1;
+  return `<div class="intro"><div class="intro-track" id="introTrack">${INTRO.map((c,k)=>`<section class="intro-card" data-key="ic${k}">${c.art}<h2>${c.title}</h2><p>${c.text}</p></section>`).join("")}</div>
+    <div class="intro-dots" aria-hidden="true">${INTRO.map((_,k)=>`<span class="${k===i?"on":""}"></span>`).join("")}</div>
+    <button class="btn primary block lg" data-act="introNext" id="introNext">${last?"Get started":"Next"}</button>
+    <button class="link small ${last?"invisible":""}" data-act="introDone" id="introSkip">Skip</button></div>`;
+}
+function introSync(){
+  const tr=$("#introTrack"); if(!tr) return;
+  const i=Math.round(tr.scrollLeft/tr.clientWidth); if(i===S.introI) return; S.introI=i;
+  document.querySelectorAll(".intro-dots span").forEach((d,k)=>d.classList.toggle("on",k===i));
+  const last=i===INTRO.length-1; $("#introNext").textContent=last?"Get started":"Next"; $("#introSkip").classList.toggle("invisible",last);
+}
+document.addEventListener("scroll", e=>{ if(e.target.id==="introTrack") introSync(); }, true);
 // New accounts: set your name and photo right after signing in, before the first fit.
 const setupKey=()=>"wa_setup_"+S.uid;
 // Once shown it stays up until you tap Continue or Skip (your name autosaves while you type).
@@ -398,6 +427,7 @@ function viewHome(){
   const kicker = st.n ? `🔥 ${st.n}-day streak` : "Start your streak";
   const headline = st.loggedToday ? "Today’s fit is in ✓" : st.n ? "What are you wearing today?" : "Show us today’s look";
   const sub = flash || (st.loggedToday ? "Changed outfits? Add another anytime." : st.n ? "Log it to keep your streak going." : "One photo starts your streak.");
+  if(needsIntro()) return introCards();
   if(needsSetup()) return setupCard();
   if(S.loaded && !S.fits.length && !S.welcomeSkipped) return welcomeCard();
   const nudge = S.loaded && S.fits.length && mutual().length && neverPosted() && !S.nudgeDismissed;
@@ -1568,6 +1598,10 @@ const ACT = {
     S.fits=S.fits.filter(f=>f.id!==x.id); S.recs=S.recs.filter(r=>r.fit_id!==x.id); S.view="home"; S.confirmDel=false; render(); toast("Fit deleted"); },
   heart:t=>toggleHeart(t.dataset.id),
   pushOn:()=>pushOn(),
+  introNext:()=>{ const tr=$("#introTrack"), i=S.introI||0;
+    if(i>=INTRO.length-1||!tr) return ACT.introDone();
+    tr.scrollTo({left:(i+1)*tr.clientWidth, behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"}); },
+  introDone:()=>{ S.introDone=true; S.inIntro=false; try{ localStorage.setItem(introKey(),"1"); }catch{} render(); scrollTo(0,0); },
   finishSetup:async()=>{
     if(!String(S.handleIn??S.profile?.handle??"").trim()){ setNameStatus("Add your first name, or skip for now."); $("#handleIn")?.focus(); return; }
     clearTimeout(S.nameT); await saveName(); if(!String(S.profile?.handle||"").trim()) return; ACT.skipSetup(); },
@@ -1696,7 +1730,7 @@ async function onSession(session){
   S.fits=[]; S.recs=[]; S.posts=[]; S.out=new Set(); S.inc=new Set(); S.people={}; S.profile=null; S.closet=[]; S.closetReady=false; S.view="home"; S.socialAt=0; S.mineAt=0;
   // Switching accounts: nothing typed or loaded for the last person carries over.
   Object.assign(S,{flow:null, share:null, fitId:null, itemId:null, hearts:{}, phones:{}, myPhone:"", chatReady:false, palettes:{}, swatchSeen:{}, codeIn:"", handleIn:null, phoneIn:null, friendMsg:"",
-    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, avatarEdit:null, nameStatus:"", setupDone:false, inSetup:false, dotFeed:false, dotFriends:false, postCount:undefined, welcomeSkipped:false, nudgeDismissed:false, toldFriends:false, friendSince:{}, pushState:null, notifyReady:false, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
+    goalIn:null, goalEdit:false, itemEdit:null, mergeAsk:null, savedMsg:null, shareBack:null, itemsDirty:false, avatarEdit:null, nameStatus:"", setupDone:false, inSetup:false, introDone:false, inIntro:false, introI:0, dotFeed:false, dotFriends:false, postCount:undefined, welcomeSkipped:false, nudgeDismissed:false, toldFriends:false, friendSince:{}, pushState:null, notifyReady:false, hookOpen:new Set(), filter:{cat:null,best:false}, renderedView:null, urlsAt:Date.now()});
   if(!uid){ S.auth={step:"email",email:S.auth.email,code:"",busy:false,msg:""}; render(); return; }
   render();
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }

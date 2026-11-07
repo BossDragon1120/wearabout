@@ -482,3 +482,32 @@ img.avatar{display:block;background:var(--chip)}
 .welcome.setup .profilecard{margin:6px 0 10px;text-align:left}
 /* Until we know whether you've logged today (first load on this device), keep the banner's space but don't show a color that may change. */
 .logbanner.hero.pending{visibility:hidden}
+
+/* New-user intro: three swipeable cards */
+.intro{display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:8px}
+.intro-track{display:flex;width:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;border-radius:24px;
+  background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 12%,var(--surface)),color-mix(in srgb,var(--gold) 14%,var(--surface)));border:1px solid var(--line)}
+.intro-track::-webkit-scrollbar{display:none}
+.intro-card{flex:0 0 100%;scroll-snap-align:center;display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:28px 22px 30px}
+.intro-card h2{font-size:26px;line-height:1.2;margin-top:8px}
+.intro-card p{color:var(--muted);line-height:1.45;max-width:300px;margin:0}
+.intro-dots{display:flex;gap:7px}
+.intro-dots span{width:7px;height:7px;border-radius:99px;background:var(--line);transition:width .2s,background .2s}
+.intro-dots span.on{width:22px;background:var(--accent)}
+.invisible{visibility:hidden}
+.ia{position:relative;width:230px;height:220px;display:flex;align-items:center;justify-content:center}
+.ia-chip{position:absolute;padding:6px 11px;border-radius:99px;background:var(--surface);border:1px solid var(--line);font-size:13px;font-weight:600;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.ia-photo{width:118px;height:168px;border-radius:16px;background:linear-gradient(180deg,#fff,#efeae2);border:4px solid #fff;box-shadow:0 10px 28px rgba(0,0,0,.14);transform:rotate(-4deg);display:flex;align-items:flex-end;justify-content:center}
+.ia-photo svg{width:72px;fill:var(--accent);opacity:.85}
+.ia-snap .c1{left:0;top:26px}.ia-snap .c2{right:-6px;top:92px}.ia-snap .c3{left:6px;bottom:22px}
+.ia-ring{width:136px;height:136px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:radial-gradient(closest-side,var(--surface) 78%,transparent 79% 100%),conic-gradient(var(--accent) 0 86%,var(--line) 86% 100%);box-shadow:0 10px 28px rgba(0,0,0,.1)}
+.ia-ring b{font-size:40px;line-height:1}.ia-ring span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+.ia-score .c1{left:-4px;top:14px}.ia-score .c2{right:0;bottom:26px}
+.ia-post{width:140px;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 10px 28px rgba(0,0,0,.14);transform:rotate(3deg)}
+.ia-postimg{height:150px;background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 35%,#fff),color-mix(in srgb,var(--gold) 40%,#fff));display:flex;justify-content:flex-end;padding:8px}
+.ia-postimg svg{width:22px;height:22px;color:#fff;fill:#e8476a;stroke:#e8476a}
+.ia-band{background:#2b2826;color:#fff;font-size:12px;font-weight:600;padding:7px 10px}
+.ia-faces{position:absolute;left:14px;top:34px;display:flex}
+.ia-faces i{width:34px;height:34px;border-radius:50%;border:3px solid var(--surface);margin-left:-10px;background:var(--accent)}
+.ia-faces i:nth-child(2){background:var(--gold)}.ia-faces i:nth-child(3){background:#4aa564}
