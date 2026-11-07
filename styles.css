@@ -527,3 +527,26 @@ img.avatar{display:block;background:var(--chip)}
   .post .photo-wrap img.main,.post .chatov{border-radius:0!important}
   .post .chatov{padding-inline:max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));box-sizing:border-box}
 }
+
+/* Feed post actions: one icon row + one quiet line; details open below on tap */
+.pacts{display:flex;align-items:center;gap:2px;padding:6px 0 0;margin-left:-8px}
+.pbtn{display:inline-flex;align-items:center;gap:5px;padding:8px;border:0;background:none;color:var(--ink);border-radius:999px;font:inherit;font-weight:700;font-size:14px;cursor:pointer}
+.pbtn svg{width:24px;height:24px}
+.pbtn.heartbtn.on{color:#e8476a}
+.pbtn.heartbtn.on span{color:var(--ink)}
+.pbtn.lit{color:var(--accent)}
+.pbtn.open{background:var(--chip)}
+.pline2{display:flex;align-items:baseline;gap:6px;font-size:14px;color:var(--ink);padding-bottom:2px;white-space:nowrap;min-width:0}
+.pline2 .pl-chat{flex:none;max-width:70%;overflow:hidden;text-overflow:ellipsis}
+.pline2 .pl-fav{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pline2 button{border:0;background:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.pline2 .pl-fav{color:var(--muted)}
+.dotsep{color:var(--muted)}
+.ppanel{margin-top:8px;animation:pop .16s ease-out}
+.chatp{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--chip)}
+.cp-top{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cp-acts{display:flex;gap:6px;flex:none}
+.morep{display:flex;justify-content:flex-start}
+.link.danger{color:#c2334d}
+@keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.ppanel{animation:none}}

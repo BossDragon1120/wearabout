@@ -32,6 +32,9 @@ const ICON = {
   people:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.7"/><path d="M17 14.5c2.4 0 4.1 1.5 4.5 4.5"/></svg>',
   heart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20Z"/></svg>',
   heartFill:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20Z"/></svg>',
+  chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.1A8 8 0 1 1 20 12Z"/></svg>',
+  tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 12.2V4h8.2l9.3 9.3a1.5 1.5 0 0 1 0 2.1l-6.1 6.1a1.5 1.5 0 0 1-2.1 0Z"/><circle cx="7.5" cy="8.5" r="1.4"/></svg>',
+  more:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
   x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   back:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 5 8 12l7 7"/></svg>',
 };
@@ -792,11 +795,8 @@ function viewFeed(){
     out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head">${avatar(p.user_id)}
       <div class="headtext"><b>${esc(name)}</b><span class="small muted">${esc(ago(p.created_at))}</span></div><span class="spacer"></span><span class="cpill">${CAT_EMOJI[p.category]||""} ${esc(p.category)}</span></div>
       ${p.caption||p.detail?`<p class="hook ${S.hookOpen&&S.hookOpen.has(p.id)?"open":""}" data-act="hookMore" data-id="${esc(p.id)}">${esc(p.caption||p.detail)}</p>`:""}
-      <div class="photo-wrap"><img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">
-        <button class="heart onphoto ${h.mine?"on":""}" data-act="heart" data-id="${esc(p.id)}" aria-pressed="${h.mine}" aria-label="${h.mine?"Unheart":"Heart"} this fit">${h.mine?ICON.heartFill:ICON.heart}${h.count?`<span>${h.count}</span>`:""}</button></div>
-      ${chatOverlay(p)}
-      ${(p.plugs||[]).length?`<div class="body">${lovesRow(p)}</div>`:""}
-      ${p.user_id===S.uid?`<div class="postfoot"><button class="link small muted" data-act="removePost" data-id="${esc(p.id)}">Remove post</button></div>`:""}
+      <div class="photo-wrap"><img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy"></div>
+      ${postActions(p,h)}
       </article>`;
   }
   return out+"</div>";
@@ -808,7 +808,31 @@ function lovesRow(p){
   return `<a class="love" href="${esc(shop)}" target="_blank" rel="noopener noreferrer">${pimg?`<img src="${esc(pimg)}" alt="" loading="lazy">`:`<span class="lovenoimg">💛</span>`}
     <span class="lovetext">${g.review?`<span class="lovequote">“${esc(g.review)}”</span>`:""}<span class="lovepiece">${g.brand?`<b>${esc(g.brand)}</b> · `:""}${esc(g.label)}</span><span class="loveshop">💛 Favorite · Shop it ↗</span></span></a>`;
 }
-// The chat invitation sits on the bottom of the photo, so the post has only one box under it.
+// Under each photo: one row of icons (heart, chat, favorite, and ••• on your own posts) and one quiet line.
+// Tapping chat, the favorite, or ••• opens its details right below; tapping again closes it.
+function postActions(p,h){
+  const id=esc(p.id), mine=p.user_id===S.uid, open=S.postOpen&&S.postOpen.id===p.id?S.postOpen.kind:"";
+  const chat=chatOpen(p)&&(mine||chatLinks(p)), fav=(p.plugs||[])[0];
+  const btn=(kind,icon,label,on)=>`<button class="pbtn ${on?"lit":""} ${open===kind?"open":""}" data-act="postOpen" data-id="${id}" data-kind="${kind}" aria-expanded="${open===kind}" aria-label="${label}">${icon}</button>`;
+  const bits=[];
+  if(chat) bits.push(`<button class="pl-chat" data-act="postOpen" data-id="${id}" data-kind="chat">${esc(p.chat_topic)} <span class="muted">until ${esc(untilTime(p.chat_until))}</span></button>`);
+  if(fav) bits.push(`<button class="pl-fav" data-act="postOpen" data-id="${id}" data-kind="fav">Favorite: ${esc([fav.brand,fav.label].filter(Boolean).join(" "))}</button>`);
+  let panel="";
+  if(open==="chat"&&chat){
+    const l=!mine&&chatLinks(p);
+    panel=`<div class="ppanel chatp"><div class="cp-top"><b>💬 ${esc(p.chat_topic)}</b><span class="small muted">${mine?"Your friends can text or call you":"Open to chat"} until ${esc(untilTime(p.chat_until))}</span></div>
+      <div class="cp-acts">${mine?`<button class="btn sm ghost" data-act="endChat" data-id="${id}">End invitation</button>`:`<a class="btn sm primary" href="${esc(l.text)}">Text</a><a class="btn sm ghost" href="${esc(l.call)}">Call</a>`}</div></div>`;
+  }
+  if(open==="fav"&&fav) panel=`<div class="ppanel">${lovesRow(p)}</div>`;
+  if(open==="more"&&mine) panel=`<div class="ppanel morep"><button class="link small danger" data-act="removePost" data-id="${id}">Remove post</button></div>`;
+  return `<div class="pacts">
+      <button class="pbtn heartbtn ${h.mine?"on":""}" data-act="heart" data-id="${id}" aria-pressed="${h.mine}" aria-label="${h.mine?"Unheart":"Heart"} this fit">${h.mine?ICON.heartFill:ICON.heart}${h.count?`<span>${h.count}</span>`:""}</button>
+      ${chat?btn("chat",ICON.chat,mine?"Your chat invitation":"Chat about this fit",true):""}
+      ${fav?btn("fav",ICON.tag,"Their favorite piece",false):""}
+      <span class="spacer"></span>${mine?btn("more",ICON.more,"More options",false):""}</div>
+    ${bits.length?`<div class="pline2">${bits.join('<span class="dotsep">·</span>')}</div>`:""}${panel}`;
+}
+// (Old layout, kept for reference: the chat invitation as a dark band under the photo.)
 function chatOverlay(p){
   if(!chatOpen(p)) return "";
   const until=`<span class="ovuntil">until ${esc(untilTime(p.chat_until))}</span>`;
@@ -1633,6 +1657,7 @@ const ACT = {
   hookMore:t=>{ const o=S.hookOpen||(S.hookOpen=new Set()); o.has(t.dataset.id)?o.delete(t.dataset.id):o.add(t.dataset.id); render(); },
   chatLine:t=>{ if(S.share){ S.share.chatTopic=t.dataset.line; render(); } },
   endChat:t=>endChat(t.dataset.id),
+  postOpen:t=>{ const o=S.postOpen, k=t.dataset.kind; S.postOpen=o&&o.id===t.dataset.id&&o.kind===k?null:{id:t.dataset.id,kind:k}; render(); },
   savePhone:async()=>{ const phone=cleanPhone(S.phoneIn ?? S.myPhone); if(!phone){ toast("That doesn't look like a phone number."); return; }
     const { error } = await sb.from("contacts").upsert({user_id:S.uid, phone, updated_at:new Date().toISOString()});
     if(error){ toast("Couldn't save your number."); return; } S.myPhone=phone; S.phoneIn=null; render(); toast("Number saved"); },
