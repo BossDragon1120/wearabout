@@ -871,6 +871,12 @@ async function setNotify(kind,on){
 function avatarSheet(){
   const a=S.avatarEdit; if(!a) return "";
   const has=S.profile&&S.profile.avatar_path;
+  if(a.cropChoosing){ const piece=S.closet.find(x=>x.id===a.pieceId), st=closetStats()[a.pieceId]||{fits:[]};
+    const list=st.fits.map(id=>S.fits.find(f=>f.id===id)).filter(Boolean);
+    return `<div class="sheetback" data-act="avatarCancel"></div><div class="sheet" role="dialog" aria-label="Choose a fit for the close-up">
+    <h3>Close-up from which fit?</h3><p class="small muted">Pick one where ${esc(piece?piece.label:"this piece")} is easy to see. You'll frame it next.</p>
+    <div class="mpick">${list.map(f=>`<button class="mcand" data-act="cropFit" data-id="${esc(f.id)}"><img src="${esc(url("fits",f.thumb_path))}" alt="" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px"><span class="small muted">${esc(shortDay(f.local_date))}</span></button>`).join("")}</div>
+    <button class="btn block" data-act="avatarCancel">Cancel</button></div>`; }
   if(a.menu) return `<div class="sheetback" data-act="avatarCancel"></div><div class="sheet" role="dialog" aria-label="Profile photo">
     <h3>Profile photo</h3>
     <button class="btn primary block lg" data-act="avatarPick">📷 Take or choose a photo</button>
@@ -883,12 +889,12 @@ function avatarSheet(){
     <button class="btn block" data-act="avatarCancel">Cancel</button></div>`;
   if(a.loading) return `<div class="sheetback"></div><div class="sheet" role="dialog" aria-label="Loading photo"><h3>Frame your photo</h3><div class="avatarCanvas loadingbox"><span class="small muted">Loading photo…</span></div></div>`;
   return `<div class="sheetback" data-act="avatarCancel"></div><div class="sheet" role="dialog" aria-label="Frame your photo">
-    <h3>Frame your photo</h3><p class="small muted">Drag to move. Pinch, or use − and +, to zoom.</p>
+    <h3>${a.mode==="crop"?"Frame the close-up":"Frame your photo"}</h3><p class="small muted">Drag to move. Pinch, or use − and +, to zoom.</p>
     <canvas id="avatarCanvas" class="avatarCanvas" width="560" height="560" aria-label="Your photo inside the circle"></canvas>
     <div class="zoomrow"><button class="zoombtn" data-act="avatarZoomOut" aria-label="Zoom out">−</button>
       <input type="range" id="avatarZoom" min="100" max="500" step="1" value="${Math.round(a.zoom*100)}" aria-label="Zoom">
       <button class="zoombtn" data-act="avatarZoomIn" aria-label="Zoom in">+</button></div>
-    <div class="row" style="flex-wrap:nowrap"><button class="btn block" data-act="avatarCancel" ${a.busy?"disabled":""}>Cancel</button><button class="btn primary block" data-act="avatarSave" ${a.busy?"disabled":""}>${a.busy?"Saving…":"Use photo"}</button></div></div>`;
+    <div class="row" style="flex-wrap:nowrap"><button class="btn block" data-act="avatarCancel" ${a.busy?"disabled":""}>Cancel</button><button class="btn primary block" data-act="avatarSave" ${a.busy?"disabled":""}>${a.busy?"Saving…":a.mode==="crop"?"Use close-up":"Use photo"}</button></div></div>`;
 }
 // Zoom while keeping the point at (px,py) (canvas units) under your fingers.
 function zoomAvatar(z, px=280, py=280){
@@ -903,7 +909,11 @@ function drawAvatar(){
   const w=img.naturalWidth*s, h=img.naturalHeight*s;
   a.cx=Math.min(w/2, Math.max(W-w/2, a.cx)); a.cy=Math.min(h/2, Math.max(W-h/2, a.cy));
   ctx.clearRect(0,0,W,W); ctx.drawImage(img, a.cx-w/2, a.cy-h/2, w, h);
-  ctx.save(); ctx.fillStyle="rgba(0,0,0,.45)"; ctx.beginPath(); ctx.rect(0,0,W,W); ctx.arc(W/2,W/2,W/2-6,0,Math.PI*2,true); ctx.fill("evenodd"); ctx.restore();
+  ctx.save(); ctx.fillStyle="rgba(0,0,0,.45)"; ctx.beginPath(); ctx.rect(0,0,W,W);
+  if(a.mode==="crop"){ const m=10, r=36, x0=m, y0=m, x1=W-m, y1=W-m;   // rounded square, like the closet thumbnails
+    ctx.moveTo(x0+r,y0); ctx.arcTo(x0,y0,x0,y1,r); ctx.arcTo(x0,y1,x1,y1,r); ctx.arcTo(x1,y1,x1,y0,r); ctx.arcTo(x1,y0,x0,y0,r); ctx.closePath(); }
+  else ctx.arc(W/2,W/2,W/2-6,0,Math.PI*2,true);
+  ctx.fill("evenodd"); ctx.restore();
 }
 async function openAvatarEditor(blob, guessFace){
   let img; try { img=await blobImage(blob); } catch { S.avatarEdit=null; render(); toast("That photo couldn't be opened. Try a different one."); return; }
@@ -915,8 +925,38 @@ async function openAvatarEditor(blob, guessFace){
   S.avatarEdit={img, zoom, cx:W/2, cy:guessFace ? W/2 + h*(0.5-0.14) : W/2};
   render(); drawAvatar();
 }
+async function openCropEditor(fit, pieceId){
+  S.avatarEdit={loading:true, mode:"crop"}; render();
+  const d=await sb.storage.from("fits").download(fit.orig_path||fit.image_path);
+  let img; try { if(d.error) throw d.error; img=await blobImage(d.data); } catch { S.avatarEdit=null; render(); toast("Couldn't load that photo. Try again."); return; }
+  const W=560, nw=img.naturalWidth, nh=img.naturalHeight, base=Math.max(W/nw, W/nh);
+  const it=(fit.items||[]).find(i=>i.item_id===pieceId), box=it&&Array.isArray(it.box)&&it.box.length===4?it.box:null;
+  let zoom=1, px=nw/2, py=nh/2;
+  if(box){ const [l,t,r,b]=box, side=Math.max((r-l)*nw,(b-t)*nh)*1.12; px=(l+r)/2*nw; py=(t+b)/2*nh; zoom=Math.min(5,Math.max(1, W/(side*base))); }
+  const s=base*zoom;
+  S.avatarEdit={img, zoom, mode:"crop", pieceId, cx:W/2+nw*s/2-px*s, cy:W/2+nh*s/2-py*s};
+  render(); drawAvatar();
+}
+async function saveCrop(){
+  const a=S.avatarEdit, piece=a&&S.closet.find(x=>x.id===a.pieceId); if(!a||!piece||a.busy) return; a.busy=true; render(); drawAvatar();
+  try {
+    const W=560, N=320, out=document.createElement("canvas"); out.width=out.height=N;
+    const s=Math.max(W/a.img.naturalWidth, W/a.img.naturalHeight)*a.zoom*(N/W), w=a.img.naturalWidth*s, h=a.img.naturalHeight*s;
+    out.getContext("2d").drawImage(a.img, a.cx*(N/W)-w/2, a.cy*(N/W)-h/2, w, h);
+    const swatch=isPatterned(piece.label)?multiColor(out,0,0,N,N):dominantColor(out,0,0,N,N,pieceHex({label:piece.label}));
+    const blob=await toBlob(out,"image/jpeg",.85), path=`${S.uid}/items/${piece.id}-${Date.now().toString(36)}.jpg`, old=piece.crop_path;
+    const up=await sb.storage.from("fits").upload(path,blob,{contentType:"image/jpeg"}); if(up.error) throw up.error;
+    const { error } = await sb.from("closet_items").update({crop_path:path, swatch}).eq("id",piece.id); if(error) throw error;
+    if(old && old.includes("/items/")) sb.storage.from("fits").remove([old]);
+    piece.crop_path=path; piece.swatch=swatch; S.urls["fits:"+path]=URL.createObjectURL(blob);
+    if(S.palettes) delete S.palettes[piece.id]; if(S.swatchSeen) delete S.swatchSeen[piece.id];
+    S.avatarEdit=null; render(); toast("Close-up updated");
+  } catch(e){ console.error(e); a.busy=false; render(); drawAvatar(); toast("Couldn't save the close-up. Try again."); }
+}
 async function saveAvatar(){
-  const a=S.avatarEdit; if(!a||a.busy) return; a.busy=true; render(); drawAvatar();
+  const a=S.avatarEdit; if(!a||a.busy) return;
+  if(a.mode==="crop") return saveCrop();
+  a.busy=true; render(); drawAvatar();
   try {
     const W=560, out=document.createElement("canvas"); out.width=out.height=400;
     const s=Math.max(W/a.img.naturalWidth, W/a.img.naturalHeight)*a.zoom*(400/W), w=a.img.naturalWidth*s, h=a.img.naturalHeight*s;
@@ -1225,8 +1265,9 @@ function viewItem(){
   const stAll=closetStats(), e=stAll[c.id]||{count:0,fits:[]}, ed=S.itemEdit||{};
   const fits=e.fits.map(id=>S.fits.find(f=>f.id===id)).filter(Boolean);
   const others=S.closet.filter(o=>o.id!==c.id && stAll[o.id]).map(o=>[o,likeness(c,o)]).sort((a,b)=>b[1]-a[1]||a[0].label.localeCompare(b[0].label)).map(x=>x[0]);
-  return `<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><div class="stack" style="gap:18px">
+  return `${avatarSheet()}<button class="back" data-act="nav" data-view="closet">${ICON.back} Closet</button><div class="stack" style="gap:18px">
     ${c.crop_path&&url("fits",c.crop_path)?`<div class="crophero"><img src="${esc(url("fits",c.crop_path))}" alt="${esc(c.label)}">${isSwatch(c.swatch)?`<span class="swatch lg" style="background:${swatchCss(c.swatch)}" title="${isMulti(c.swatch)?"Main colors":"Main color"}"></span>`:""}</div>`:""}
+    ${fits.length?`<button class="link small" style="align-self:center" data-act="cropPick" data-id="${esc(c.id)}">${c.crop_path?"Change close-up":"Add a close-up"}</button>`:""}
     <div><span class="tag">${esc(TYPE_LABEL[c.type]||"Other")}</span><h2 style="margin-top:4px">${esc(c.label)}</h2>
       <p class="small muted">Worn ${e.count}× · last ${esc(shortDay(e.last))}</p></div>
     <div class="grid g3">${fits.map(x=>`<button class="card" data-key="ifit-${esc(x.id)}" data-act="openFit" data-id="${esc(x.id)}" data-from="item"><img src="${esc(url("fits",x.thumb_path))}" alt="${esc(x.category)} fit" loading="lazy"><span class="cbody"><span class="cdate">${esc(longDate(x.created_at))}</span><span class="pills"><span class="cpill">${CAT_EMOJI[x.category]||""} ${esc(x.category)}</span></span></span></button>`).join("")}</div>
@@ -1407,7 +1448,7 @@ const ACT = {
       const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); if(error) throw error; render(); toast("Added to closet"); }
     catch(e){ console.error(e); toast("Couldn't add it. Try again."); } },
   closetSort:t=>{ S.closetSort=t.dataset.sort; render(); },
-  openItem:t=>{ S.itemId=t.dataset.id; S.itemEdit=null; S.mergeAll=false; S.mergeAsk=null; S.moreColors=false; S.confirmRemove=false; S.view="item"; render(); scrollTo(0,0); },
+  openItem:t=>{ S.itemId=t.dataset.id; S.itemEdit=null; S.mergeAll=false; S.mergeAsk=null; S.moreColors=false; S.avatarEdit=null; S.confirmRemove=false; S.view="item"; render(); scrollTo(0,0); },
   saveItem:()=>saveClosetItem(),
   mergeAsk:t=>{ S.mergeAsk={from:t.dataset.from, to:t.dataset.to, keep:t.dataset.to}; render(); },
   mergeKeep:t=>{ if(S.mergeAsk&&!S.mergeAsk.busy){ S.mergeAsk.keep=t.dataset.id; render(); } },
@@ -1462,6 +1503,8 @@ const ACT = {
     openAvatarEditor(d.data, true); },
   goProfile:()=>{ const c=document.querySelector(".profilecard"); if(!c) return; c.scrollIntoView({behavior:"smooth",block:"center"});
     if(!String(S.profile?.handle||"").trim()) setTimeout(()=>$("#handleIn")?.focus({preventScroll:true}),450); },
+  cropPick:t=>{ S.avatarEdit={cropChoosing:true, pieceId:t.dataset.id}; render(); },
+  cropFit:t=>{ const a=S.avatarEdit, f=S.fits.find(x=>x.id===t.dataset.id); if(a&&f) openCropEditor(f, a.pieceId); },
   avatarMenu:()=>{ S.avatarEdit={menu:true}; render(); },
   avatarRemove:async()=>{ const old=S.profile&&S.profile.avatar_path; S.avatarEdit=null;
     const { error } = await sb.from("profiles").update({avatar_path:null}).eq("id",S.uid);
