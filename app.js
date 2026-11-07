@@ -823,9 +823,9 @@ function postActions(p,h){
   const id=esc(p.id), mine=p.user_id===S.uid, open=S.postOpen&&S.postOpen.id===p.id?S.postOpen.kind:"";
   const chat=chatOpen(p)&&(mine||chatLinks(p)), fav=(p.plugs||[])[0];
   const btn=(kind,icon,label,on)=>`<button class="pbtn ${on?"lit":""} ${open===kind?"open":""}" data-act="postOpen" data-id="${id}" data-kind="${kind}" aria-expanded="${open===kind}" aria-label="${label}">${icon}</button>`;
-  const bits=[];
-  if(chat) bits.push(`<button class="pl-chat" data-act="postOpen" data-id="${id}" data-kind="chat">${esc(p.chat_topic)} <span class="muted">until ${esc(untilTime(p.chat_until))}</span></button>`);
-  if(fav) bits.push(`<button class="pl-fav" data-act="postOpen" data-id="${id}" data-kind="fav">Favorite: ${esc([fav.brand,fav.label].filter(Boolean).join(" "))}</button>`);
+  // Chat and the favorite piece are labeled pills (the favorite shows a tiny picture of the piece).
+  const pill=(kind,cls,inner,label)=>`<button class="ppill ${cls} ${open===kind?"open":""}" data-act="postOpen" data-id="${id}" data-kind="${kind}" aria-expanded="${open===kind}" aria-label="${label}">${inner}</button>`;
+  const favImg=fav&&fav.img&&url("posts",fav.img), favName=fav&&(fav.label||fav.brand||"Favorite");
   let panel="";
   if(open==="chat"&&chat){
     const l=!mine&&chatLinks(p);
@@ -836,10 +836,9 @@ function postActions(p,h){
   if(open==="more"&&mine) panel=`<div class="ppanel morep"><button class="link small danger" data-act="removePost" data-id="${id}">Remove post</button></div>`;
   return `<div class="pacts">
       <button class="pbtn heartbtn ${h.mine?"on":""}" data-act="heart" data-id="${id}" aria-pressed="${h.mine}" aria-label="${h.mine?"Unheart":"Heart"} this fit">${h.mine?ICON.heartFill:ICON.heart}${h.count?`<span>${h.count}</span>`:""}</button>
-      ${chat?btn("chat",ICON.chat,mine?"Your chat invitation":"Chat about this fit",true):""}
-      ${fav?btn("fav",ICON.tag,"Their favorite piece",false):""}
-      <span class="spacer"></span>${mine?btn("more",ICON.more,"More options",false):""}</div>
-    ${bits.length?`<div class="pline2">${bits.join('<span class="dotsep">·</span>')}</div>`:""}${panel}`;
+      ${chat?pill("chat","chatpill",`<span class="pp-ic" aria-hidden="true">💬</span><span class="pp-t">${esc(p.chat_topic)}</span>`,mine?"Your chat invitation":"Chat: "+p.chat_topic):""}
+      ${fav?pill("fav","favpill",`${favImg?`<img src="${esc(favImg)}" alt="">`:`<span class="pp-ic" aria-hidden="true">💛</span>`}<span class="pp-t">Fave</span>`,"Favorite piece: "+favName):""}
+      <span class="spacer"></span>${mine?btn("more",ICON.more,"More options",false):""}</div>${panel}`;
 }
 // (Old layout, kept for reference: the chat invitation as a dark band under the photo.)
 function chatOverlay(p){
