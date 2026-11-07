@@ -353,7 +353,7 @@ function goalRow(){
     <div class="row" style="flex-wrap:nowrap"><input class="input" id="goalIn" maxlength="40" value="${esc(S.goalIn ?? S.goal)}" placeholder="e.g. more executive, sportier, more color"><button class="btn sm primary" data-act="saveGoal">Save</button></div>
     <div class="chipgrid goalideas">${GOAL_IDEAS.map(g=>`<button class="chip ${String(S.goalIn ?? S.goal).toLowerCase()===g.toLowerCase()?"on":""}" data-act="pickGoal" data-goal="${esc(g)}">${esc(g)}</button>`).join("")}</div>
     <p class="small muted">Counts for 10% of each new fit's score.${S.goal?` <button class="link small" data-act="clearGoal">Remove goal</button>`:""}</p></div>`;
-  return `<div class="goalrow">🧭 <span>${S.goal?`Style goal: <b>${esc(S.goal)}</b>`:"Add a style goal to your score"}</span><button class="link small" data-act="editGoal">${S.goal?"Edit":"Set one"}</button></div>`;
+  return `<div class="goalrow">🧭 <span>${S.goal?`<b>${esc(S.goal)}</b>`:"Not set"}</span><button class="link small" data-act="editGoal">${S.goal?"Edit":"Set one"}</button></div>`;
 }
 /* --- getting people to the first fit and the first post (no names: people may not set a real one) --- */
 const FIRST_FIT_LINES = ["What are you wearing today? Show us.","Don’t be shy. Flaunt it.","Mirror selfie? Perfect. That’s all it takes.","Day one of your streak is one photo away."];
@@ -445,7 +445,6 @@ function viewHome(){
     ${nudge && !S.nudgeHold ? firstPostCard() : ""}
     ${offer?`<div class="offer"><span>Love this one? Show your friends.</span><button class="btn sm primary" data-act="shareOffer">Share it</button><button class="iconbtn" data-act="dismissOffer" aria-label="Not now">${ICON.x}</button></div>`:""}
     <div class="countrow"><span class="count">${S.fits.length}</span><span class="countlbl">Outfit${S.fits.length===1?"":"s"} logged</span></div>
-    ${goalRow()}
     <div class="chips" role="toolbar" aria-label="Filters" style="margin-top:12px">
       <button class="chip best ${f.best?"on":""}" data-act="filterBest" aria-pressed="${f.best}">⭐ Best</button>
       ${CATS.map(c=>`<button class="chip ${f.cat===c?"on":""}" data-act="filterCat" data-cat="${esc(c)}" aria-pressed="${f.cat===c}">${TAG_SVG}${esc(c)}</button>`).join("")}
@@ -927,6 +926,7 @@ function viewProfile(){
         <div class="row" style="flex-wrap:nowrap"><input class="input" id="phoneIn" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(S.phoneIn ?? S.myPhone)}" placeholder="(555) 123-4567"><button class="btn sm" data-act="savePhone">Save</button></div>
         <p class="small muted">Used only when you invite friends to chat about a fit. Only mutual friends can see it.${S.myPhone?` <button class="link small" data-act="removePhone">Remove my number</button>`:""}</p></div>`:""}
     </div>
+    <div class="panel goalpanel"><h3>Style goal</h3><p class="small muted" style="margin:0">Your score leans toward the look you're going for.</p>${goalRow()}</div>
     ${S.notifyReady?notifyPanel():""}
     ${avatarSheet()}
     <p class="small muted" style="text-align:center">Signed in as ${esc(S.email)}</p>
