@@ -286,6 +286,7 @@ function render(){
   renderTabs();
   const v=S.view;
   const prev=S.renderedView; S.renderedView=v+"|"+(S.flow?S.flow.step:"")+"|"+(S.fitId||"")+"|"+(S.itemId||"");
+  if(prev!==S.renderedView) S.dimOpen=null;   // each fit's score opens with all notes closed
   const html = v==="flow"?(S.flow&&S.flow.step==="result"?viewResult():viewFlow()) : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="profile"?viewProfile() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
   // A different screen starts fresh (so old open panels don't carry over); the same screen updates in place.
   if(prev!==S.renderedView) m.innerHTML=html; else setHTML(m, html);
@@ -522,10 +523,11 @@ function scoreBlock(an, score, cat, fb, recAct){
   return `<div class="scoreRow"><div class="score">${fmtScore(score)}<small>/10</small></div><div class="small muted" style="padding-bottom:6px">${score>=BEST?"⭐ In your Best fits":"Style score for "+esc(cat)}<br>Only you see this.</div></div>
     ${badgeChips(an.badges)}
     ${an.review?`<p class="review">${esc(an.review)}</p>`:""}
-    <details class="dimswrap"><summary>
-      <div class="minibars">${dims.map(([k,label])=>{ const d=an.dims[k]; return `<div class="mb ${k===low?"low":""}"><span class="ml">${esc(k==="goal"?"Your goal":short(label))}</span><span class="mbar"><i style="width:${d.score*10}%"></i></span><span class="mv">${Number(d.score).toFixed(1)}</span></div>`; }).join("")}</div>
-      <div class="mfoot"><span class="small muted">${low?`Room to grow: <b>${esc(name(low))}</b>`:best?`Strongest: <b>${esc(name(best))}</b>`:""}</span><span class="link small showwhen-closed">See notes</span><span class="link small showwhen-open">Hide notes</span></div></summary>
-      <div class="mnotes">${dims.map(([k,label,w])=>{ const d=an.dims[k]; return `<div><b>${esc(k==="goal"?"Your goal: "+an.goal:label)}</b> <span class="muted small">${Math.round(w*100)}% of score</span>${d.note?`<p class="small muted">${esc(d.note)}</p>`:""}</div>`; }).join("")}</div></details>
+    <div class="dimswrap" role="list">
+      <div class="minibars">${dims.map(([k,label,w])=>{ const d=an.dims[k], open=S.dimOpen===k;
+        return `<div class="mbwrap ${open?"open":""}" role="listitem"><button class="mb ${k===low?"low":""}" data-act="dimOpen" data-k="${esc(k)}" aria-expanded="${open}"><span class="ml">${esc(k==="goal"?"Your goal":short(label))}</span><span class="mbar"><i style="width:${d.score*10}%"></i></span><span class="mv">${Number(d.score).toFixed(1)}</span><span class="mchev" aria-hidden="true">›</span></button>
+          ${open?`<div class="mnote"><p class="small">${esc(d.note||"No notes for this one.")}</p><span class="muted small">${k==="goal"?`Toward ${esc(an.goal)} · `:""}${Math.round(w*100)}% of your score</span></div>`:""}</div>`; }).join("")}</div>
+      <div class="mfoot"><span class="small muted">${low?`Room to grow: <b>${esc(name(low))}</b>`:best?`Strongest: <b>${esc(name(best))}</b>`:""}</span>${S.dimOpen?"":`<span class="small muted">Tap one for notes</span>`}</div></div>
     <div class="stack" style="gap:12px"><h3>Level it up</h3>
       ${an.tweak?recCard("tweak","Tweak",an.tweak.title,an.tweak.detail,fb.tweak,recAct):""}
       ${an.buy?recCard("buy","Buy",an.buy.item,an.buy.why,fb.buy,recAct):an.buyOff?"":`<div class="rec"><span class="kind">Buy</span><b>No need to buy anything for this look!</b></div>`}
@@ -1781,6 +1783,8 @@ const ACT = {
   hookMore:t=>{ const o=S.hookOpen||(S.hookOpen=new Set()); o.has(t.dataset.id)?o.delete(t.dataset.id):o.add(t.dataset.id); render(); },
   chatLine:t=>{ if(S.share){ S.share.chatTopic=t.dataset.line; render(); } },
   endChat:t=>endChat(t.dataset.id),
+  // Score breakdown: open one category's note at a time; tap again to close.
+  dimOpen:t=>{ const k=t.dataset.k; S.dimOpen=S.dimOpen===k?null:k; render(); },
   postOpen:t=>{ const o=S.postOpen, k=t.dataset.kind; S.postOpen=o&&o.id===t.dataset.id&&o.kind===k?null:{id:t.dataset.id,kind:k}; render(); },
   savePhone:async()=>{ const phone=cleanPhone(S.phoneIn ?? S.myPhone); if(!phone){ toast("That doesn't look like a phone number."); return; }
     const { error } = await sb.from("contacts").upsert({user_id:S.uid, phone, updated_at:new Date().toISOString()});

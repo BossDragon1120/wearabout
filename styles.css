@@ -587,3 +587,16 @@ img.avatar{display:block;background:var(--chip)}
 .favpill img{width:28px;height:28px;border-radius:50%;object-fit:cover;flex:none;background:var(--chip)}
 .ppill.open{border-color:currentColor}
 .favpill.open{border-color:color-mix(in srgb,var(--gold) 60%,transparent)}
+/* Score breakdown: tap a category to see just its note */
+.dimswrap{padding:10px 8px 12px}
+.dimswrap .minibars{gap:2px}
+.mbwrap{border-radius:12px}
+.mbwrap.open{background:var(--chip)}
+button.mb{width:100%;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;padding:8px;border-radius:12px;grid-template-columns:84px minmax(0,1fr) 30px 12px}
+@media (hover:hover){button.mb:hover{background:color-mix(in srgb,var(--chip) 60%,transparent)}}
+.mchev{color:var(--muted);font-size:18px;line-height:1;transition:transform .15s}
+.mbwrap.open .mchev{transform:rotate(90deg)}
+.mnote{padding:0 12px 12px;animation:pop .16s ease-out}
+.mnote b{font-size:14px}
+.mnote p{margin:0 0 4px;color:var(--ink);line-height:1.45}
+.dimswrap .mfoot{padding:8px 8px 0}
