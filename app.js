@@ -730,13 +730,6 @@ function viewShare(){
     ${neverPosted()?`<div class="note">Your first post! Friends see the photo and caption. Your score always stays private.</div>`:""}
     <canvas class="shareCanvas" id="shareCanvas" width="720" height="960" aria-label="Post preview"></canvas>
     <div class="field"><label for="caption">Caption (optional)</label><input class="input" id="caption" maxlength="140" value="${esc(sh.caption)}" placeholder="Where you're headed: Fleet Week, dinner date…">${x.detail?`<p class="small muted">Your caption from logging this fit. Edit it for friends if you like; your saved fit keeps the original.</p>`:""}</div>
-    <div class="stack" style="gap:8px"><h3>Plug one piece you love</h3>
-      ${(x.items||[]).length?x.items.map((it,i)=>{ const p=sh.plugs[i]; return `<div class="plug">
-        <label class="ck"><input type="checkbox" data-plug-on="${i}" ${p?"checked":""}>${plugCrop(it)?`<img class="plugthumb" src="${esc(url("fits",plugCrop(it)))}" alt="">`:""} ${esc(it.label)}</label>
-        ${p?`<input class="input" data-plug-i="${i}" data-field="brand" maxlength="40" placeholder="Brand (optional)" value="${esc(p.brand)}" autocapitalize="words">
-        <textarea class="input" data-plug-i="${i}" data-field="review" maxlength="160" placeholder="Why you love it (optional)">${esc(p.review)}</textarea>
-        <p class="small muted">Friends get a Shop it button that searches for ${esc([p.brand, it.label].filter(Boolean).join(" "))}.${plugCrop(it)?" They'll see this close-up too.":""}</p>`:""}</div>`; }).join(""):`<p class="small muted">No items were listed for this fit.</p>`}
-    </div>
     ${S.chatReady?`<div class="chatpanel ${sh.chat?"on":""}">
       <label class="switchrow" for="chatOn"><span><b>💬 Up for a chat?</b><span class="small muted">Friends can text or call you for the next ${CHAT_HOURS} hours.</span></span>
         <input type="checkbox" id="chatOn" class="switch" role="switch" ${sh.chat?"checked":""}></label>
@@ -744,6 +737,16 @@ function viewShare(){
         <div class="field"><label for="chatTopic" class="small">Or write your own</label><input class="input" id="chatTopic" maxlength="60" value="${esc(sh.chatTopic)}"></div>
         ${S.myPhone?`<p class="small muted">Friends will reach you at ${esc(S.myPhone)}. <button class="link small" data-act="nav" data-view="friends">Change</button></p>`
         :`<div class="field"><label for="chatPhone">Your phone number</label><input class="input" id="chatPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(sh.phone)}" placeholder="(555) 123-4567"><p class="small muted">Only your mutual friends can see it, and only to text or call you. You can remove it anytime on the Friends tab.</p></div>`}`:""}
+    </div>`:""}
+    ${(x.items||[]).length?`<div class="chatpanel plugask ${sh.plugAsk==="yes"?"on":""}">
+      <label class="switchrow" for="plugOn"><span><b>💛 Plug a piece you love?</b><span class="small muted">Optional. Friends see it with a Shop it button.</span></span>
+        <input type="checkbox" id="plugOn" class="switch" role="switch" data-act="plugAsk" ${sh.plugAsk==="yes"?"checked":""}></label>
+      ${sh.plugAsk==="yes"?`<div class="stack" style="gap:8px"><p class="small muted" style="margin:0">Pick one:</p>
+      ${(x.items||[]).length?x.items.map((it,i)=>{ const p=sh.plugs[i]; return `<div class="plug">
+        <label class="ck"><input type="checkbox" data-plug-on="${i}" ${p?"checked":""}>${plugCrop(it)?`<img class="plugthumb" src="${esc(url("fits",plugCrop(it)))}" alt="">`:""} ${esc(it.label)}</label>
+        ${p?`<input class="input" data-plug-i="${i}" data-field="brand" maxlength="40" placeholder="Brand (optional)" value="${esc(p.brand)}" autocapitalize="words">
+        <textarea class="input" data-plug-i="${i}" data-field="review" maxlength="160" placeholder="Why you love it (optional)">${esc(p.review)}</textarea>
+        <p class="small muted">Friends get a Shop it button that searches for ${esc([p.brand, it.label].filter(Boolean).join(" "))}.${plugCrop(it)?" They'll see this close-up too.":""}</p>`:""}</div>`; }).join(""):""}</div>`:""}
     </div>`:""}
     <p class="small muted">Only mutual friends see your post. Your score stays private, and friends can only react with hearts.</p>
     <button class="btn primary block" data-act="postShare" ${sh.posting?"disabled":""}>${sh.posting?"Posting…":"Post to friends"}</button>
@@ -1785,6 +1788,7 @@ const ACT = {
   endChat:t=>endChat(t.dataset.id),
   // Score breakdown: open one category's note at a time; tap again to close.
   dimOpen:t=>{ const k=t.dataset.k; S.dimOpen=S.dimOpen===k?null:k; render(); },
+  plugAsk:t=>{ const sh=S.share; if(!sh) return; sh.plugAsk=t.checked?"yes":"no"; if(sh.plugAsk!=="yes") sh.plugs={}; render(); },
   postOpen:t=>{ const o=S.postOpen, k=t.dataset.kind; S.postOpen=o&&o.id===t.dataset.id&&o.kind===k?null:{id:t.dataset.id,kind:k}; render(); },
   savePhone:async()=>{ const phone=cleanPhone(S.phoneIn ?? S.myPhone); if(!phone){ toast("That doesn't look like a phone number."); return; }
     const { error } = await sb.from("contacts").upsert({user_id:S.uid, phone, updated_at:new Date().toISOString()});
