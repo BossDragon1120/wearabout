@@ -437,7 +437,7 @@ function viewHome(){
   const nudge = S.loaded && S.fits.length && mutual().length && neverPosted() && !S.nudgeDismissed;
   // Right after a save, let the save message have the moment; the nudge shows next time you're here.
   const offer = S.shareOffer && S.fits.find(x=>x.id===S.shareOffer);
-  let out=`<div class="logbanner hero ${flash?"flash":""} ${st.loggedToday?"done":""} ${st.unknown?"pending":""}" id="logHero">
+  let out=`${installBanner()}<div class="logbanner hero ${flash?"flash":""} ${st.loggedToday?"done":""} ${st.unknown?"pending":""}" id="logHero">
       <span class="hero-kicker">${kicker}</span>
       <b class="hero-title">${headline}</b>
       <span class="lb-sub">${sub}</span>
@@ -1020,6 +1020,33 @@ function viewProfile(){
     <p class="small muted" style="text-align:center">Signed in as ${esc(S.email)}</p>
     <button class="btn ghost sm signout" data-act="signOut">Sign out</button>
   </div>`;
+}
+/* --- "add to home screen" reminder: only on a phone, only in a browser tab --- */
+const isAndroid = () => /Android/.test(navigator.userAgent);
+addEventListener("beforeinstallprompt", e=>{ e.preventDefault(); S.installEvt=e; softRender(["home"]); });
+addEventListener("appinstalled", ()=>{ S.installEvt=null; softRender(["home"]); });
+function installBanner(){
+  if(!(isIOS()||isAndroid()) || standalone() || !S.loaded) return "";
+  try{ const t=+localStorage.getItem("wa_install_hide")||0; if(Date.now()-t<7*864e5) return ""; }catch{}
+  return `<div class="installbar"><span class="ib-icon" aria-hidden="true"><img src="icons/icon-192.png" alt=""></span>
+    <span class="ib-text"><b>Add to your home screen</b><span class="small muted">${isIOS()?"Full screen, with notifications":"Opens like an app"}</span></span>
+    ${S.installEvt?`<button class="btn sm primary" data-act="installNow">Install</button>`:`<button class="btn sm primary" data-act="installHow">How?</button>`}
+    <button class="iconbtn sm" data-act="installHide" aria-label="Not now">${ICON.x}</button></div>${installSheet()}`;
+}
+function installSheet(){
+  if(!S.installHow) return "";
+  const ios=isIOS(), inChrome=/CriOS/.test(navigator.userAgent);
+  const steps = ios ? [
+      inChrome?"Tap <b>Share</b> (the square with an arrow) at the top right.":"Tap <b>Share</b> (the square with an arrow) at the bottom of Safari. Don't see it? Tap <b>•••</b> first.",
+      "Scroll down and tap <b>Add to Home Screen</b>.",
+      "If you see <b>Open as Web App</b>, keep it on. Then tap <b>Add</b>.",
+      "Open WearAbout from the new icon and <b>sign in once more</b>. It doesn't carry over from the browser."]
+    : ["Tap <b>⋮</b> at the top right of Chrome.","Choose <b>Install app</b> or <b>Add to Home screen</b>.","Open WearAbout from the new icon and sign in."];
+  return `<div class="sheetback" data-act="installClose"></div><div class="sheet" role="dialog" aria-label="Add to home screen">
+    <h3>Add to your home screen</h3>
+    <ol class="steps">${steps.map(t=>`<li>${t}</li>`).join("")}</ol>
+    <p class="small muted">From then on, open WearAbout from the icon. It opens full screen, like any app.</p>
+    <button class="btn primary block" data-act="installClose">Got it</button></div>`;
 }
 /* --- phone notifications --- */
 const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -1776,6 +1803,10 @@ const ACT = {
   // Share your wishlist as a picture card (plus a short message), after picking items and adding a note.
   shareBuys:()=>{ const buys=S.recs.filter(r=>r.kind==="buy"); if(!buys.length) return;
     S.buyShare={sel:new Set(buys.map(r=>r.id)), note:"", preview:""}; render(); wishPreview(); },
+  installHow:()=>{ S.installHow=true; render(); },
+  installClose:()=>{ S.installHow=false; render(); },
+  installHide:()=>{ try{ localStorage.setItem("wa_install_hide",String(Date.now())); }catch{} S.installHow=false; render(); },
+  installNow:async()=>{ const e=S.installEvt; if(!e) return ACT.installHow(); S.installEvt=null; try{ e.prompt(); await e.userChoice; }catch{} render(); },
   wishClose:()=>{ S.buyShare=null; render(); },
   wishToggle:t=>{ const b=S.buyShare, id=t.dataset.id; if(!b) return; b.sel.has(id)?b.sel.delete(id):b.sel.add(id); render(); wishPreview(); },
   wishNote:t=>{ const b=S.buyShare; if(!b) return; b.note=b.note===t.dataset.note?"":t.dataset.note; render(); wishPreview(); },
