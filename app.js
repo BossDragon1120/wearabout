@@ -271,10 +271,20 @@ function render(){
   if(prev!==S.renderedView) m.innerHTML=html; else setHTML(m, html);
   if(v==="share") drawShare();
   if(S.avatarEdit&&S.avatarEdit.img) drawAvatar();
+  watchHero();
 }
 function softRender(views){
   const a=document.activeElement, typing=a && a.closest && a.closest("#main") && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
   if(views.includes(S.view) && !typing && !S.dragging) render();
+}
+// A floating camera button on Fits, shown once the big "Add your fit" card has scrolled out of view.
+let heroObs=null;
+function watchHero(){
+  const fab=$("#fab"); if(!fab) return;
+  const hero=$("#logHero"), show=v=>{ fab.hidden=!v; };
+  if(heroObs){ heroObs.disconnect(); heroObs=null; }
+  if(S.view!=="home" || !hero){ show(false); return; }
+  heroObs=new IntersectionObserver(([e])=>show(!e.isIntersecting), {rootMargin:"-60px 0px 0px 0px"}); heroObs.observe(hero);
 }
 function renderTabs(){
   const homeish=["home","fit","flow","share"].includes(S.view);
@@ -356,14 +366,21 @@ function firstPostCard(){
 }
 function viewHome(){
   const st=streakInfo(), f=S.filter;
-  const title = st.n ? `🔥 ${st.n}-day streak` : "Log today's fit";
   const flash = S.homeFlash && Date.now()<S.homeFlash.until ? S.homeFlash.text : null;
-  const sub = flash || (st.loggedToday ? "Today's fit is in. Add another anytime." : st.n ? "Keep your streak alive — what are you wearing?" : "Start your streak — what are you wearing?");
+  // The hero: a big question and a big button. Its words change with your day.
+  const kicker = st.n ? `🔥 ${st.n}-day streak` : "Start your streak";
+  const headline = st.loggedToday ? "Today’s fit is in ✓" : st.n ? "What are you wearing today?" : "Show us today’s look";
+  const sub = flash || (st.loggedToday ? "Changed outfits? Add another anytime." : st.n ? "Log it to keep your streak going." : "One photo starts your streak.");
   if(S.loaded && !S.fits.length && !S.welcomeSkipped) return welcomeCard();
   const nudge = S.loaded && S.fits.length && mutual().length && neverPosted() && !S.nudgeDismissed;
   // Right after a save, let the save message have the moment; the nudge shows next time you're here.
   const offer = S.shareOffer && S.fits.find(x=>x.id===S.shareOffer);
-  let out=(nudge && !S.nudgeHold ? firstPostCard() : "")+`<button class="logbanner ${flash?"flash":""}" data-act="log" aria-label="Log a fit"><span class="lb-ic">📸</span><span><b>${title}</b><span class="lb-sub">${sub}</span></span><span class="lb-plus">+</span></button>
+  let out=`<div class="logbanner hero ${flash?"flash":""} ${st.loggedToday?"done":""}" id="logHero">
+      <span class="hero-kicker">${kicker}</span>
+      <b class="hero-title">${headline}</b>
+      <span class="lb-sub">${sub}</span>
+      <button class="btn primary block lg hero-btn" data-act="log">📸 ${st.loggedToday?"Add another fit":"Add your fit"}</button></div>
+    ${nudge && !S.nudgeHold ? firstPostCard() : ""}
     ${offer?`<div class="offer"><span>Love this one? Show your friends.</span><button class="btn sm primary" data-act="shareOffer">Share it</button><button class="iconbtn" data-act="dismissOffer" aria-label="Not now">${ICON.x}</button></div>`:""}
     <div class="countrow"><span class="count">${S.fits.length}</span><span class="countlbl">Outfit${S.fits.length===1?"":"s"} logged</span></div>
     ${goalRow()}
@@ -531,7 +548,7 @@ async function saveFit(share=false){
       // Land on Fits: the new card glows, and the streak banner itself carries the save message,
       // so nothing floats over the page. A strong score with friends to show gets a "Share it" line under the banner.
       // The banner title already shows the streak, so the message just confirms the save.
-      S.homeFlash={ text: firstFit ? "🎉 First fit logged · welcome to WearAbout!" : (n>1?"Saved ✓":"Saved ✓ · streak started")+newNote, until: Date.now()+5000 };
+      S.homeFlash={ text: firstFit ? "🎉 First fit logged. Welcome to WearAbout!" : (n>1?"Saved ✓":"Saved ✓ · streak started")+newNote, until: Date.now()+5000 };
       S.shareOffer = !firstFit && a && a.score>=7.5 && mutual().length && !nudging ? id : null;
       S.nudgeHold = true;   // no share nudge popping in during this visit
       S.view="home"; S.filter={cat:null,best:false}; S.justSaved=id; render(); scrollTo(0,0); S.justSaved=null;
