@@ -1035,7 +1035,7 @@ addEventListener("appinstalled", ()=>{ S.installEvt=null; softRender(["home"]); 
 function installBanner(){
   if(!(isIOS()||isAndroid()) || standalone() || !S.loaded) return "";
   try{ const t=+localStorage.getItem("wa_install_hide")||0; if(Date.now()-t<7*864e5) return ""; }catch{}
-  return `<div class="installbar"><span class="ib-icon" aria-hidden="true"><img src="icons/icon-192.png" alt=""></span>
+  return `<div class="installbar"><span class="ib-icon" aria-hidden="true"><img src="icons/icon-192.png?v=2" alt=""></span>
     <span class="ib-text"><b>Add to your home screen</b><span class="small muted">${isIOS()?"Full screen, with notifications":"Opens like an app"}</span></span>
     ${S.installEvt?`<button class="btn sm primary" data-act="installNow">Install</button>`:`<button class="btn sm primary" data-act="installHow">How?</button>`}
     <button class="iconbtn sm" data-act="installHide" aria-label="Not now">${ICON.x}</button></div>${installSheet()}`;
