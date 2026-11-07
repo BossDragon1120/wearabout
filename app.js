@@ -34,6 +34,7 @@ const ICON = {
   heartFill:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20Z"/></svg>',
   chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.1A8 8 0 1 1 20 12Z"/></svg>',
   tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 12.2V4h8.2l9.3 9.3a1.5 1.5 0 0 1 0 2.1l-6.1 6.1a1.5 1.5 0 0 1-2.1 0Z"/><circle cx="7.5" cy="8.5" r="1.4"/></svg>',
+  share:'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>',
   more:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
   x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   back:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 5 8 12l7 7"/></svg>',
@@ -857,7 +858,8 @@ async function toggleHeart(id){
 /* --- ideas (hearted recs) --- */
 function viewSaved(){
   const list=S.recs.filter(r=>S.ideasFilter==="all"||r.kind===S.ideasFilter);
-  let out=`<div class="stack"><h2>Recs</h2>
+  const nbuy=S.recs.filter(r=>r.kind==="buy").length;
+  let out=`<div class="stack"><div class="row"><h2>Recs</h2><span class="spacer"></span>${nbuy?`<button class="btn sm" data-act="shareBuys">${ICON.share} Share buy list</button>`:""}</div>
     <label class="switchrow" for="buyRecs"><span><b>Buy recommendations</b><span class="small muted">${S.buyRecs?"Each new fit gets one thing to buy, plus a tweak.":"Off. New fits only get a styling tweak."}</span></span>
       <input type="checkbox" id="buyRecs" class="switch" role="switch" ${S.buyRecs?"checked":""}></label>
     <div class="chips" role="toolbar" aria-label="Filter ideas">${[["all","All"],["tweak","Tweaks"],["buy","Buys"]].map(([k,l])=>`<button class="chip ${S.ideasFilter===k?"on":""}" data-act="ideasFilter" data-f="${k}" aria-pressed="${S.ideasFilter===k}">${l} · ${k==="all"?S.recs.length:S.recs.filter(r=>r.kind===k).length}</button>`).join("")}</div>`;
@@ -1681,6 +1683,13 @@ const ACT = {
     const text=`👋 Hi! ${name?"It's "+name+". ":""}I've been logging my outfits on WearAbout and I'd love for you to join me 💛 Snap your fit, get a style score, and share your best looks with friends. Sign up here: ${link} (my friend code is ${code}) ✨`;
     try { if(navigator.share){ await navigator.share({title:"WearAbout", text}); return; } } catch(e){ if(e && e.name==="AbortError") return; }
     try { await navigator.clipboard.writeText(text); toast("Invite copied. Paste it into a message."); } catch { toast("Your link: "+link); }
+  },
+  // Send your saved buys as a plain list with a search link for each, e.g. to a friend or as gift ideas.
+  shareBuys:async()=>{
+    const buys=S.recs.filter(r=>r.kind==="buy"); if(!buys.length) return;
+    const text="My buy list from WearAbout:\n\n"+buys.map(r=>`• ${r.title}${r.detail?` (${r.detail.replace(/\s+/g," ").slice(0,90)}${r.detail.length>90?"…":""})`:""}\n  ${google(r.query||r.title)}`).join("\n\n");
+    try { if(navigator.share){ await navigator.share({title:"My buy list", text}); return; } } catch(e){ if(e && e.name==="AbortError") return; }
+    try { await navigator.clipboard.writeText(text); toast("Buy list copied. Paste it into a message."); } catch { toast("Couldn't copy the list on this device."); }
   },
   copyCode:async()=>{ const c=S.profile&&S.profile.friend_code; try{ await navigator.clipboard.writeText(c); toast("Code copied"); }catch{ toast("Your code is "+c); } },
   addFriend:async()=>{ const code=S.codeIn.trim().toUpperCase(); if(!code) return;
