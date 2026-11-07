@@ -957,18 +957,17 @@ async function wishPreview(){
   const el=$("#wishPrev"); if(el&&el.tagName==="IMG") el.src=b.preview; else render();
 }
 async function sendWishlist(){
+  // Just the picture card. The note and items are already on it.
   const b=S.buyShare, items=wishItems(); if(!b||!items.length) return;
-  const note=b.note.trim(), text=(note?note+"\n\n":"")+"On my wishlist:\n"+items.map(r=>"• "+r.title).join("\n");
   let blob=null; try{ const c=await wishCanvas(); blob=await new Promise(r=>c.toBlob(r,"image/png")); }catch{}
-  const file=blob&&new File([blob],"wishlist.png",{type:"image/png"});
+  if(!blob){ toast("Couldn't make the card. Try again."); return; }
+  const file=new File([blob],"wishlist.png",{type:"image/png"});
   try{
-    if(file&&navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file], text}); S.buyShare=null; render(); return; }
-    if(navigator.share){ await navigator.share({title:"My wishlist", text}); S.buyShare=null; render(); return; }
+    if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file]}); S.buyShare=null; render(); return; }
   }catch(e){ if(e&&e.name==="AbortError") return; }
-  // No share sheet (e.g. a computer): save the picture and copy the message.
-  if(blob){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="wishlist.png"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }
-  try{ await navigator.clipboard.writeText(text); }catch{}
-  S.buyShare=null; render(); toast(blob?"Card saved and message copied":"Message copied. Paste it into a message.");
+  // No way to share a picture here (e.g. a computer): save it instead.
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="wishlist.png"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  S.buyShare=null; render(); toast("Wishlist card saved to your downloads");
 }
 
 async function setBuyRecs(on){
