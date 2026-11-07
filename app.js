@@ -1295,13 +1295,19 @@ async function updateFitsItems(fn){
     const bad=res.find(r=>r.error); if(bad) throw bad.error;
   }
 }
+// Keep every fit's copy of a piece's name and type the same as the Closet's.
+async function syncFitLabels(ids){
+  const pieces=new Map(S.closet.filter(c=>ids.includes(c.id)).map(c=>[c.id,c]));
+  await updateFitsItems(items=>items.map(i=>{ const c=pieces.get(i.item_id); return c && (i.label!==c.label || i.type!==c.type) ? {...i, label:c.label, type:c.type} : i; }));
+}
 async function saveClosetItem(){
   const c=curItem(); if(!c) return; const ed=S.itemEdit||{};
   const label=String(ed.label ?? c.label).trim().slice(0,80), type=ed.type ?? c.type;
   if(!label){ toast("Give it a name first."); return; }
   const { error } = await sb.from("closet_items").update({label,type}).eq("id",c.id);
   if(error){ toast("Couldn't save. Try again."); return; }
-  c.label=label; c.type=type; S.itemEdit=null; render(); toast("Saved");
+  c.label=label; c.type=type; S.itemEdit=null; render();
+  try { await syncFitLabels([c.id]); toast("Saved · updated on your fits too"); } catch(e){ console.error(e); toast("Saved in your Closet, but couldn't update every fit."); }
 }
 // How alike two pieces look on paper: same type counts most, then shared words in the name, then color.
 function pieceHex(c){ const name=" "+normLabel(c.label)+" "; const w=COLOR_KEYS.find(k=>new RegExp(`\\b${k}\\b`).test(name)); return w?COLOR_WORDS[w]:swatchList(c.swatch)[0]||null; }
@@ -1474,9 +1480,20 @@ const ACT = {
   backToBackdrop:()=>{ const f=S.flow; if(!f) return; f.step=f.keepBg?"occasion":"style"; render(); scrollTo(0,0); },
   addItem:()=>{ const x=curFit(); x.items=[...(x.items||[]),{label:"",type:"other",brand:null,clear:true}]; S.itemsDirty=true; render(); const ins=document.querySelectorAll("[data-item-i]"); ins[ins.length-1]?.focus(); },
   removeItem:t=>{ const x=curFit(); x.items=x.items.filter((_,i)=>i!=t.dataset.i); S.itemsDirty=true; render(); },
-  saveItems:async()=>{ const x=curFit(); x.items=(x.items||[]).filter(i=>i.label.trim()).map(i=>({...i,label:i.label.trim()}));
+  saveItems:async()=>{ const x=curFit(); x.items=(x.items||[]).filter(i=>i.label.trim()).map(i=>({...i,label:i.label.trim().slice(0,80)}));
     try { x.items=await linkItems(x.items); } catch(e){ console.error(e); }
-    const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); if(!error) S.itemsDirty=false; toast(error?"Couldn't save labels.":"Labels saved"); render(); },
+    const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id);
+    if(error){ toast("Couldn't save labels."); render(); return; }
+    S.itemsDirty=false;
+    // A piece renamed or retyped here is renamed in the Closet too, and in every other fit it appears in.
+    const changed=(x.items||[]).filter(i=>{ const c=i.item_id&&S.closet.find(p=>p.id===i.item_id); return c && (c.label!==i.label || (ITEM_TYPES.includes(i.type) && c.type!==i.type)); });
+    try {
+      for(const i of changed){ const c=S.closet.find(p=>p.id===i.item_id), type=ITEM_TYPES.includes(i.type)?i.type:c.type;
+        const r=await sb.from("closet_items").update({label:i.label, type}).eq("id",c.id); if(r.error) throw r.error; c.label=i.label; c.type=type; }
+      if(changed.length) await syncFitLabels(changed.map(i=>i.item_id));
+      toast(changed.length?"Saved · updated in your Closet too":"Labels saved");
+    } catch(e){ console.error(e); toast("Saved here, but couldn't update your Closet. Try again."); }
+    render(); },
   share:()=>{ S.shareBack="fit"; openShare(); },
   cancelShare:()=>{ S.share=null; S.view=S.shareBack||"fit"; S.shareBack=null; render(); scrollTo(0,0); if(S.savedMsg){ toast(S.savedMsg); S.savedMsg=null; } },
   postShare:()=>postShare(),
