@@ -281,7 +281,7 @@ function renderTabs(){
   const on=id=>id==="home"?homeish:id==="closet"?["closet","item"].includes(S.view):S.view===id;
   const dot=id=>(id==="feed"&&S.dotFeed)||(id==="friends"&&S.dotFriends);
   const t=(id,label,icon)=>`<button class="tab ${on(id)?"on":""}" data-act="nav" data-view="${id}" aria-current="${on(id)?"page":"false"}" ${dot(id)?`aria-label="${label}, something new"`:""}>${icon}<span>${label}</span>${dot(id)?`<i class="tabdot" aria-hidden="true"></i>`:""}</button>`;
-  setHTML($("#tabs"), t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Ideas",ICON.bulb)+t("friends","Friends",ICON.people)+t("closet","Closet",ICON.closet));
+  setHTML($("#tabs"), t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Recs",ICON.bulb)+t("friends","Friends",ICON.people)+t("closet","Closet",ICON.closet));
 }
 
 /* --- sign in --- */
@@ -573,7 +573,7 @@ function recCard(kind,label,title,detail,state,act="recFb"){
   return `<div class="rec"><span class="kind">${label}</span><b>${esc(title)}</b>${detail?`<p class="small muted">${esc(detail)}</p>`:""}
     <div class="acts"><button class="iconbtn ${state==="up"?"on":""}" data-act="${act}" data-kind="${kind}" data-val="up" aria-label="Save this rec" aria-pressed="${state==="up"}">${state==="up"?ICON.heartFill:ICON.heart}</button>
     <button class="iconbtn ${state==="down"?"off":""}" data-act="${act}" data-kind="${kind}" data-val="down" aria-label="Not for me" aria-pressed="${state==="down"}">${ICON.x}</button>
-    ${state==="up"?`<span class="small muted" style="align-self:center">${act==="flowRecFb"?"Goes to Ideas when you save":"Added to Ideas"}</span>`:""}</div></div>`;
+    ${state==="up"?`<span class="small muted" style="align-self:center">${act==="flowRecFb"?"Goes to Recs when you save":"Added to Recs"}</span>`:""}</div></div>`;
 }
 async function openFit(id, from="home"){
   S.itemsDirty=false; S.fitBack=from; S.fitId=id; S.view="fit"; S.confirmDel=false; render(); scrollTo(0,0);
@@ -593,7 +593,7 @@ async function recFeedback(kind,val){
   try {
     const r1=await sb.from("fits").update({rec_fb:x.rec_fb}).eq("id",x.id); if(r1.error) throw r1.error;
     if(next==="up"){
-      await saveIdea(x,kind); toast("Added to Ideas");
+      await saveIdea(x,kind); toast("Added to Recs");
     } else {
       await sb.from("saved_recs").delete().eq("fit_id",x.id).eq("kind",kind);
       S.recs=S.recs.filter(z=>!(z.fit_id===x.id&&z.kind===kind));
@@ -758,11 +758,11 @@ async function toggleHeart(id){
 /* --- ideas (hearted recs) --- */
 function viewSaved(){
   const list=S.recs.filter(r=>S.ideasFilter==="all"||r.kind===S.ideasFilter);
-  let out=`<div class="stack"><h2>Ideas</h2>
+  let out=`<div class="stack"><h2>Recs</h2>
     <label class="switchrow" for="buyRecs"><span><b>Buy recommendations</b><span class="small muted">${S.buyRecs?"Each new fit gets one thing to buy, plus a tweak.":"Off. New fits only get a styling tweak."}</span></span>
       <input type="checkbox" id="buyRecs" class="switch" role="switch" ${S.buyRecs?"checked":""}></label>
     <div class="chips" role="toolbar" aria-label="Filter ideas">${[["all","All"],["tweak","Tweaks"],["buy","Buys"]].map(([k,l])=>`<button class="chip ${S.ideasFilter===k?"on":""}" data-act="ideasFilter" data-f="${k}" aria-pressed="${S.ideasFilter===k}">${l} · ${k==="all"?S.recs.length:S.recs.filter(r=>r.kind===k).length}</button>`).join("")}</div>`;
-  if(!S.recs.length) out+=`<div class="empty"><b>No ideas yet</b><p class="small muted">Heart a tweak or buy rec on any fit and it lands here, ready to look up.</p></div>`;
+  if(!S.recs.length) out+=`<div class="empty"><b>No recs yet</b><p class="small muted">Heart a tweak or buy rec on any fit and it lands here, ready to look up.</p></div>`;
   else if(!list.length) out+=`<div class="empty"><p class="small muted">No ${S.ideasFilter==="buy"?"buy":"tweak"} ideas saved yet.</p></div>`;
   for(const r of list){ const f=S.fits.find(x=>x.id===r.fit_id);
     out+=`<div class="saved" data-key="rec-${esc(r.id)}">${f?`<img src="${esc(url("fits",f.thumb_path))}" alt="">`:`<span></span>`}<div class="stack" style="gap:6px;min-width:0">
