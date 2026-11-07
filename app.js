@@ -291,7 +291,7 @@ function renderTabs(){
   const on=id=>id==="home"?homeish:id==="closet"?["closet","item"].includes(S.view):S.view===id;
   const dot=id=>(id==="feed"&&S.dotFeed)||(id==="friends"&&S.dotFriends);
   const t=(id,label,icon)=>`<button class="tab ${on(id)?"on":""}" data-act="nav" data-view="${id}" aria-current="${on(id)?"page":"false"}" ${dot(id)?`aria-label="${label}, something new"`:""}>${icon}<span>${label}</span>${dot(id)?`<i class="tabdot" aria-hidden="true"></i>`:""}</button>`;
-  setHTML($("#tabs"), t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("saved","Recs",ICON.bulb)+t("friends","Friends",ICON.people)+t("closet","Closet",ICON.closet));
+  setHTML($("#tabs"), t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("closet","Closet",ICON.closet)+t("saved","Recs",ICON.bulb)+t("friends","Friends",ICON.people));
 }
 
 /* --- sign in --- */
