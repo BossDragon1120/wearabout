@@ -161,6 +161,10 @@ async function loadMine(){
   ]);
   S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null; S.goal=(g.data&&g.data.style_goal)||"";
   S.buyRecs=!(g.data && g.data.buy_recs===false);
+  // AI consent (App Store rule): before the database has the column, treat everyone as agreed so nothing breaks.
+  S.consentReady=!!(g.data ? ("ai_consent_at" in g.data) : await sb.from("user_settings").select("ai_consent_at").limit(1).then(r=>!r.error));
+  S.aiConsent=!S.consentReady || !!(g.data&&g.data.ai_consent_at); S.aiConsentAt=(g.data&&g.data.ai_consent_at)||null;
+  sb.from("blocks").select("blocked,blocked_name").then(r=>{ S.blocksReady=!r.error; S.blocks=r.data||[]; softRender(["profile"]); });
   S.notifyReady=!!(g.data ? ("notify_posts" in g.data) : await sb.from("user_settings").select("notify_posts").limit(1).then(r=>!r.error));
   S.notify={posts:!(g.data&&g.data.notify_posts===false), friends:!(g.data&&g.data.notify_friends===false)};
   S.closetReady=!c.error; S.closet=c.data||[];
@@ -194,7 +198,7 @@ async function loadSocial(){
   if(S.avatarReady) await signUrls("avatars", Object.values(S.people).map(p=>p.avatar_path).filter(Boolean));
   const hearts={};
   (h.data||[]).forEach(x=>{ const e=hearts[x.post_id]||(hearts[x.post_id]={count:0,mine:false}); e.count++; if(x.user_id===S.uid) e.mine=true; });
-  S.posts=list; S.hearts=hearts; S.socialAt=Date.now();
+  { const hid=hiddenPosts(); S.posts=list.filter(p=>!hid.has(p.id)); } S.hearts=hearts; S.socialAt=Date.now();
   if(S.postCount===undefined||S.postCount===0){ const { count } = await sb.from("posts").select("id",{count:"exact",head:true}).eq("user_id",S.uid); S.postCount=count||0; }
   // When each friendship became mutual (the later of the two sides), for the "new friend" dot.
   const since={}; (fr||[]).forEach(x=>{ const other=x.user_id===S.uid?x.friend_id:x.user_id; since[other]=since[other]&&since[other]>x.created_at?since[other]:x.created_at; });
@@ -288,8 +292,9 @@ function render(){
   const prev=S.renderedView; S.renderedView=v+"|"+(S.flow?S.flow.step:"")+"|"+(S.fitId||"")+"|"+(S.itemId||"");
   if(prev!==S.renderedView) S.dimOpen=null;   // each fit's score opens with all notes closed
   const html = v==="flow"?(S.flow&&S.flow.step==="result"?viewResult():viewFlow()) : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="profile"?viewProfile() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
+  const sheets = consentSheet() + (v==="feed" ? reportSheet()+blockSheet() : "");
   // A different screen starts fresh (so old open panels don't carry over); the same screen updates in place.
-  if(prev!==S.renderedView) m.innerHTML=html; else setHTML(m, html);
+  if(prev!==S.renderedView) m.innerHTML=html+sheets; else setHTML(m, html+sheets);
   if(v==="share") drawShare();
   if(S.avatarEdit&&S.avatarEdit.img) drawAvatar();
   watchHero();
@@ -333,6 +338,7 @@ function viewAuth(){
       <button class="btn primary block" type="submit" ${a.busy?"disabled":""}>${a.busy?"Checking…":"Sign in"}</button>
       <button class="link" type="button" data-act="authBack">Use a different email</button>`}
     ${a.msg?`<p class="small">${esc(a.msg)}</p>`:""}
+    <p class="small muted legal">By continuing, you agree to our <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p>
   </form>`;
 }
 async function submitAuth(){
@@ -801,6 +807,9 @@ async function postShare(){
 }
 
 /* --- feed --- */
+// Posts you reported stay hidden from your feed on this device.
+function hiddenPosts(){ try{ return new Set(JSON.parse(localStorage.getItem("wa_hidden_"+S.uid)||"[]")); }catch{ return new Set(); } }
+function hidePost(id){ const h=hiddenPosts(); h.add(id); try{ localStorage.setItem("wa_hidden_"+S.uid, JSON.stringify([...h].slice(-300))); }catch{} S.posts=S.posts.filter(p=>p.id!==id); }
 function viewFeed(){
   const n=mutual().length;
   let out=`<div class="stack"><div class="row"><h2>Feed</h2><span class="spacer"></span><button class="link small" data-act="nav" data-view="friends">${n} friend${n===1?"":"s"}</button></div>`;
@@ -839,12 +848,13 @@ function postActions(p,h){
       <div class="cp-acts">${mine?`<button class="btn sm ghost" data-act="endChat" data-id="${id}">End invitation</button>`:`<a class="btn sm primary" href="${esc(l.text)}">Text</a><a class="btn sm ghost" href="${esc(l.call)}">Call</a>`}</div></div>`;
   }
   if(open==="fav"&&fav) panel=`<div class="ppanel">${lovesRow(p)}</div>`;
-  if(open==="more"&&mine) panel=`<div class="ppanel morep"><button class="link small danger" data-act="removePost" data-id="${id}">Remove post</button></div>`;
+  if(open==="more") panel=mine?`<div class="ppanel morep"><button class="link small danger" data-act="removePost" data-id="${id}">Remove post</button></div>`
+    :`<div class="ppanel morep"><button class="link small" data-act="reportPost" data-id="${id}">Report post</button><button class="link small danger" data-act="blockAsk" data-id="${esc(p.user_id)}">Block ${esc(displayName(p.user_id))}</button></div>`;
   return `<div class="pacts">
       <button class="pbtn heartbtn ${h.mine?"on":""}" data-act="heart" data-id="${id}" aria-pressed="${h.mine}" aria-label="${h.mine?"Unheart":"Heart"} this fit">${h.mine?ICON.heartFill:ICON.heart}${h.count?`<span>${h.count}</span>`:""}</button>
       ${chat?pill("chat","chatpill",`<span class="pp-ic" aria-hidden="true">💬</span><span class="pp-t">${esc(p.chat_topic)}</span>`,mine?"Your chat invitation":"Chat: "+p.chat_topic):""}
       ${fav?pill("fav","favpill",`${favImg?`<img src="${esc(favImg)}" alt="">`:`<span class="pp-ic" aria-hidden="true">💛</span>`}<span class="pp-t">Fave</span>`,"Favorite piece: "+favName):""}
-      <span class="spacer"></span>${mine?btn("more",ICON.more,"More options",false):""}</div>${panel}`;
+      <span class="spacer"></span>${btn("more",ICON.more,"More options",false)}</div>${panel}`;
 }
 // (Old layout, kept for reference: the chat invitation as a dark band under the photo.)
 function chatOverlay(p){
@@ -1011,6 +1021,61 @@ function viewFriends(){
   </div>`;
 }
 /* --- your profile (its own page, from the top of Friends) --- */
+/* --- App Store requirements: AI consent, report, block, delete account --- */
+function consentSheet(){
+  if(!S.consentAsk) return "";
+  return `<div class="sheetback" data-act="consentNo"></div><div class="sheet consentsheet" role="dialog" aria-label="Photo analysis">
+    <h3>Before your first fit</h3>
+    <p>To score your outfit, find the pieces for your closet, and make backdrops, WearAbout sends each fit photo you add to two services:</p>
+    <ul class="consentlist"><li><b>Anthropic</b> (Claude AI) looks at the photo to score the outfit and list the pieces.</li>
+      <li><b>Photoroom</b> removes the background to make your backdrops.</li></ul>
+    <p class="small muted">They process your photo only to do this for you. Your photos and scores stay private unless you post to friends. You can turn this off any time in Profile. <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
+    <button class="btn primary block" data-act="consentYes">Agree and add a photo</button>
+    <button class="link small" data-act="consentNo">Not now</button></div>`;
+}
+const REPORT_REASONS=["Inappropriate or offensive","Harassment or bullying","Spam or a scam","Something else"];
+function reportSheet(){
+  const r=S.report; if(!r) return "";
+  const p=S.posts.find(z=>z.id===r.id);
+  if(r.done) return `<div class="sheetback" data-act="reportClose"></div><div class="sheet" role="dialog" aria-label="Report sent">
+    <h3>Thanks for telling us</h3><p>We'll review this post within 24 hours and remove it if it breaks our rules. It's hidden from your feed now.</p>
+    ${r.who?`<button class="btn block" data-act="blockAsk" data-id="${esc(r.who)}">Also block ${esc(displayName(r.who))}</button>`:""}
+    <button class="btn primary block" data-act="reportClose">Done</button></div>`;
+  return `<div class="sheetback" data-act="reportClose"></div><div class="sheet" role="dialog" aria-label="Report post">
+    <h3>Report this post</h3><p class="small muted">${p?esc(displayName(p.user_id))+" won't know you reported it.":""}</p>
+    <div class="reasonlist">${REPORT_REASONS.map(x=>`<button class="reason ${r.reason===x?"on":""}" data-act="reportReason" data-r="${esc(x)}">${esc(x)}</button>`).join("")}</div>
+    <div class="field"><label for="reportDetails" class="small">Anything else? (optional)</label><textarea class="input" id="reportDetails" maxlength="300">${esc(r.details||"")}</textarea></div>
+    <button class="btn primary block" data-act="reportSend" ${r.reason&&!r.busy?"":"disabled"}>${r.busy?"Sending…":"Send report"}</button>
+    <button class="link small" data-act="reportClose">Cancel</button></div>`;
+}
+function blockSheet(){
+  const id=S.blockAsk; if(!id) return "";
+  const name=esc(displayName(id));
+  return `<div class="sheetback" data-act="blockClose"></div><div class="sheet" role="dialog" aria-label="Block">
+    <h3>Block ${name}?</h3><p>You'll stop being friends, you won't see each other's posts, and ${name} can't add you again. They won't be told.</p>
+    <button class="btn dangerfill block" data-act="blockYes">Block ${name}</button>
+    <button class="link small" data-act="blockClose">Cancel</button></div>`;
+}
+function deleteSheet(){
+  const d=S.delAcct; if(!d) return "";
+  const ok=String(d.typed||"").trim().toUpperCase()==="DELETE";
+  return `<div class="sheetback" data-act="deleteClose"></div><div class="sheet" role="dialog" aria-label="Delete account">
+    <h3>Delete your account?</h3>
+    <p>This permanently deletes your fits, photos, closet, recs, posts, friends and profile. It can't be undone.</p>
+    <div class="field"><label for="deleteTyped">Type DELETE to confirm</label><input class="input" id="deleteTyped" autocapitalize="characters" autocomplete="off" value="${esc(d.typed||"")}"></div>
+    <button class="btn dangerfill block" data-act="deleteYes" id="deleteYesBtn" ${ok&&!d.busy?"":"disabled"}>${d.busy?"Deleting…":"Delete my account"}</button>
+    <button class="link small" data-act="deleteClose">Cancel</button></div>`;
+}
+function privacyPanel(){
+  const blocks=S.blocks||[];
+  return `<div class="panel privpanel"><h3>Privacy & data</h3>
+    ${S.consentReady?`<div class="prow"><span><b>Photo analysis</b><span class="small muted">${S.aiConsent?`On${S.aiConsentAt?" since "+esc(new Date(S.aiConsentAt).toLocaleDateString()):""}. Fit photos go to Anthropic and Photoroom for your score, closet and backdrops.`:"Off. We'll ask before your next fit."}</span></span>
+      ${S.aiConsent?`<button class="link small" data-act="consentWithdraw">Turn off</button>`:""}</div>`:""}
+    ${S.blocksReady?`<div class="prow"><span><b>Blocked</b><span class="small muted">${blocks.length?"":"No one."}</span></span></div>
+      ${blocks.map(b=>`<div class="person"><span class="pline"><b>${esc(b.blocked_name||"Someone")}</b></span><button class="link small" data-act="unblock" data-id="${esc(b.blocked)}">Unblock</button></div>`).join("")}`:""}
+    <div class="prow links"><a class="link small" href="privacy.html" target="_blank" rel="noopener">Privacy policy</a><a class="link small" href="terms.html" target="_blank" rel="noopener">Terms of use</a></div>
+  </div>`;
+}
 function viewProfile(){
   const p=S.profile;
   return `<button class="back" data-act="nav" data-view="friends">${ICON.back} Friends</button><div class="stack"><h2>Profile</h2>
@@ -1029,9 +1094,11 @@ function viewProfile(){
     </div>
     <div class="panel goalpanel"><h3>Style goal</h3><p class="small muted" style="margin:0">Your score leans toward the look you're going for.</p>${goalRow()}</div>
     ${S.notifyReady?notifyPanel():""}
-    ${avatarSheet()}
+    ${privacyPanel()}
+    ${avatarSheet()}${deleteSheet()}
     <p class="small muted" style="text-align:center">Signed in as ${esc(S.email)}</p>
     <button class="btn ghost sm signout" data-act="signOut">Sign out</button>
+    <button class="link small danger deleteacct" data-act="deleteOpen">Delete account</button>
   </div>`;
 }
 /* --- "add to home screen" reminder: only on a phone, only in a browser tab --- */
@@ -1690,7 +1757,15 @@ document.addEventListener("touchend",()=>{
 const ACT = {
   nav:t=>{ S.nameStatus=""; S.nudgeHold=false; S.shareOffer=null; S.homeFlash=null; S.view=t.dataset.view; if(S.view==="feed"){ seenSet("feed"); S.dotFeed=false; } if(S.view==="friends"){ seenSet("friends"); S.dotFriends=false; } S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
     if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
-  log:()=>{ S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
+  log:()=>{ if(!S.aiConsent){ S.consentAsk=true; render(); return; } S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
+  consentYes:()=>{ S.aiConsent=true; S.consentAsk=false; S.aiConsentAt=new Date().toISOString();
+    // Open the photo picker right away (it must happen inside the tap), then save the agreement.
+    const i=$("#photoIn"); if(i){ S.replacing=false; i.value=""; i.click(); }
+    sb.from("user_settings").upsert({user_id:S.uid, ai_consent_at:S.aiConsentAt, updated_at:new Date().toISOString()}).then(({error})=>{ if(error){ console.error(error); toast("Couldn't save your choice. Try again."); S.aiConsent=false; } });
+    render(); },
+  consentNo:()=>{ S.consentAsk=false; render(); },
+  consentWithdraw:async()=>{ const { error } = await sb.from("user_settings").upsert({user_id:S.uid, ai_consent_at:null, updated_at:new Date().toISOString()});
+    if(error){ toast("Couldn't update that. Try again."); return; } S.aiConsent=false; S.aiConsentAt=null; render(); toast("Turned off. We'll ask again before your next fit."); },
   changePhoto:()=>{ S.replacing=true; const i=$("#photoIn"); i.value=""; i.click(); },
   filterBest:()=>{ S.filter.best=!S.filter.best; render(); },
   filterCat:t=>{ const c=t.dataset.cat||null; S.filter.cat=S.filter.cat===c?null:c; render(); },
@@ -1839,6 +1914,33 @@ const ACT = {
     render(); },
   addBack:async t=>{ try{ await addFriend(t.dataset.uid); toast("You're now friends"); }catch{ toast("Couldn't add them back."); } render(); },
   signOut:async()=>{ await sb.auth.signOut(); },
+  reportPost:t=>{ const p=S.posts.find(z=>z.id===t.dataset.id); S.report={id:t.dataset.id, who:p&&p.user_id, reason:"", details:""}; S.postOpen=null; render(); },
+  reportReason:t=>{ if(!S.report) return; S.report.reason=t.dataset.r; render(); },
+  reportClose:()=>{ S.report=null; render(); },
+  reportSend:async()=>{ const r=S.report; if(!r||!r.reason||r.busy) return; const p=S.posts.find(z=>z.id===r.id);
+    r.busy=true; render();
+    const { error } = await sb.from("reports").insert({post_id:r.id, reported_user:p?p.user_id:null, reason:r.reason, details:String(r.details||"").slice(0,300), image_path:p?p.image_path:null});
+    r.busy=false;
+    if(error){ console.error(error); toast("Couldn't send the report. Try again."); render(); return; }
+    hidePost(r.id); r.done=true; render(); },
+  blockAsk:t=>{ S.blockAsk=t.dataset.id; S.postOpen=null; if(S.report) S.report=null; render(); },
+  blockClose:()=>{ S.blockAsk=null; render(); },
+  blockYes:async()=>{ const id=S.blockAsk; if(!id) return; const name=displayName(id);
+    const { error } = await sb.rpc("block_user",{who:id});
+    if(error){ console.error(error); toast("Couldn't block. Try again."); return; }
+    S.blockAsk=null; S.posts=S.posts.filter(p=>p.user_id!==id);
+    (S.blocks=S.blocks||[]).push({blocked:id, blocked_name:name}); S.socialAt=0;
+    render(); toast(`Blocked ${name}`); loadSocial&&loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
+  unblock:async t=>{ const id=t.dataset.id; const { error } = await sb.from("blocks").delete().eq("blocker",S.uid).eq("blocked",id);
+    if(error){ toast("Couldn't unblock. Try again."); return; } S.blocks=(S.blocks||[]).filter(b=>b.blocked!==id); render(); toast("Unblocked. You can add each other again."); },
+  deleteOpen:()=>{ S.delAcct={typed:""}; render(); },
+  deleteClose:()=>{ S.delAcct=null; render(); },
+  deleteYes:async()=>{ const d=S.delAcct; if(!d||d.busy||String(d.typed||"").trim().toUpperCase()!=="DELETE") return;
+    d.busy=true; render();
+    try{ await callFn("wear-about",{action:"deleteAccount"}); }
+    catch(e){ d.busy=false; render(); toast(e.message||"Couldn't delete your account."); return; }
+    try{ localStorage.clear(); }catch{}
+    S.delAcct=null; try{ await sb.auth.signOut(); }catch{} toast("Your account and everything in it has been deleted."); },
   ideasFilter:t=>{ S.ideasFilter=t.dataset.f; render(); },
   pickGoal:t=>{ S.goalIn=t.dataset.goal; render(); },
   editGoal:()=>{ S.goalEdit=true; S.goalIn=null; render(); setTimeout(()=>$("#goalIn")?.focus(),0); },
@@ -1875,6 +1977,8 @@ document.addEventListener("input", e=>{
   else if(t.id==="avatarZoom"&&S.avatarEdit){ zoomAvatar(Number(t.value)/100); }
   else if(t.id==="handleIn"){ S.handleIn=t.value; clearTimeout(S.nameT); S.nameT=setTimeout(saveName, 900); setNameStatus("…"); }
   else if(t.id==="goalIn") S.goalIn=t.value;
+  else if(t.id==="reportDetails"&&S.report) S.report.details=t.value;
+  else if(t.id==="deleteTyped"&&S.delAcct){ S.delAcct.typed=t.value; const b=$("#deleteYesBtn"); if(b) b.disabled=String(t.value).trim().toUpperCase()!=="DELETE"; }
   else if(t.id==="wishNoteIn"&&S.buyShare){ S.buyShare.note=t.value; clearTimeout(S.wishT); S.wishT=setTimeout(wishPreview,300); }
   else if(t.id==="itemLabel") (S.itemEdit||(S.itemEdit={})).label=t.value;
 });

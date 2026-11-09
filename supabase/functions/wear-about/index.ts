@@ -324,6 +324,35 @@ async function handleNotify(admin: any, body: any) {
   return json(200, { ok: true, sent: (subs ?? []).length });
 }
 
+/* ------------------------------------------------------------------ delete account */
+
+// Remove every file under <uid>/ in each photo bucket (folders are listed and emptied recursively).
+async function emptyFolder(admin: ReturnType<typeof createClient>, bucket: string, prefix: string): Promise<void> {
+  for (let round = 0; round < 50; round++) {
+    const { data, error } = await admin.storage.from(bucket).list(prefix, { limit: 1000 });
+    if (error) throw new Error(`${bucket}: ${error.message}`);
+    if (!data || !data.length) return;
+    const files = data.filter((e) => e.id).map((e) => `${prefix}/${e.name}`);
+    const folders = data.filter((e) => !e.id).map((e) => `${prefix}/${e.name}`);
+    for (const f of folders) await emptyFolder(admin, bucket, f);
+    if (!files.length) return;
+    const { error: rmErr } = await admin.storage.from(bucket).remove(files);
+    if (rmErr) throw new Error(`${bucket}: ${rmErr.message}`);
+    if (data.length < 1000) return;
+  }
+}
+async function deleteAccount(admin: ReturnType<typeof createClient>, uid: string) {
+  try {
+    for (const bucket of ["fits", "posts", "avatars"]) await emptyFolder(admin, bucket, uid);
+    const { error } = await admin.auth.admin.deleteUser(uid);
+    if (error) throw new Error(error.message);
+    return json(200, { ok: true });
+  } catch (e) {
+    console.error("delete account", uid, (e as Error).message);
+    return json(500, { error: "Couldn't delete your account. Try again, or email us and we'll do it for you." });
+  }
+}
+
 /* ------------------------------------------------------------------ request handling */
 
 Deno.serve(async (req) => {
@@ -346,6 +375,13 @@ Deno.serve(async (req) => {
   const user = auth.data.user;
   if (!user) return json(401, { error: "Sign in again." });
   if (!body) return json(400, { error: "Bad request." });
+  // Delete my account: every photo I stored, then the account itself (which removes all my rows).
+  if (body.action === "deleteAccount") return deleteAccount(admin, user.id);
+  // Photos only go to the AI services after the person has agreed in the app (App Store rule 5.1.2).
+  {
+    const { data: st, error: stErr } = await admin.from("user_settings").select("ai_consent_at").eq("user_id", user.id).maybeSingle();
+    if (!stErr && !(st && st.ai_consent_at)) return json(403, { error: "Please agree to photo analysis first." });
+  }
   if (!body.image || body.image.length > 8_000_000) return json(400, { error: "Missing or oversized photo." });
 
   const isBackdrop = body.action === "backdrop";

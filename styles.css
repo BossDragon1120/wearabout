@@ -607,3 +607,19 @@ button.mb{width:100%;border:0;background:none;font:inherit;color:inherit;text-al
 .seg{display:inline-flex;flex:none;background:var(--chip);border-radius:999px;padding:3px}
 .seg button{border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--muted);padding:7px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
 .seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+/* App Store: consent, report, block, delete account */
+.consentsheet p{margin:0 0 10px;line-height:1.45}
+.consentlist{margin:0 0 10px;padding-left:20px;display:flex;flex-direction:column;gap:6px;line-height:1.4}
+.reasonlist{display:flex;flex-direction:column;gap:6px;margin:6px 0 10px}
+.reason{padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.reason.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface));font-weight:600}
+.morep{gap:18px;flex-wrap:wrap}
+.btn.dangerfill{background:#c2334d;color:#fff;border-color:#c2334d}
+.btn.dangerfill:disabled{opacity:.45}
+.privpanel{display:flex;flex-direction:column;gap:10px}
+.prow{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.prow>span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.prow.links{justify-content:flex-start;gap:18px}
+.deleteacct{display:block;margin:4px auto 0}
+.auth .legal{margin-top:14px;text-align:center}
+.auth .legal a{color:inherit;text-decoration:underline}

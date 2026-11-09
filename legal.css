@@ -1,0 +1,17 @@
+:root{--bg:#F4F3F0;--surface:#fff;--ink:#1B1B1A;--muted:#6E6A64;--line:#E2DFD9;--accent:#5B3FD0}
+@media (prefers-color-scheme: dark){:root{--bg:#121211;--surface:#1D1C1B;--ink:#F2F0EC;--muted:#A9A59F;--line:#2F2D2A;--accent:#A592F2}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif}
+main{max-width:720px;margin:0 auto;padding:32px max(16px,env(safe-area-inset-left)) 64px}
+.mark{font:800 22px "Montserrat","Avenir Next","Helvetica Neue",Arial,sans-serif;letter-spacing:-.5px;text-decoration:none;color:var(--ink)}
+.mark span{color:var(--accent)}
+h1{font:800 32px/1.15 "Montserrat","Avenir Next","Helvetica Neue",Arial,sans-serif;margin:28px 0 6px;letter-spacing:-.5px}
+h2{font-size:19px;margin:32px 0 8px}
+.updated{color:var(--muted);font-size:14px;margin:0 0 24px}
+.summary{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px 20px}
+.summary ul{margin:6px 0 0;padding-left:20px}
+table{width:100%;border-collapse:collapse;font-size:15px;margin:8px 0}
+th,td{text-align:left;vertical-align:top;padding:10px 8px;border-bottom:1px solid var(--line)}
+th{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+a{color:var(--accent)}
+li{margin:4px 0}
