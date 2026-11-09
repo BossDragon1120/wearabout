@@ -624,3 +624,13 @@ button.mb{width:100%;border:0;background:none;font:inherit;color:inherit;text-al
 .auth .legal{margin-top:14px;text-align:center}
 .auth .legal a{color:inherit;text-decoration:underline}
 .prow>.link,.prow>button{white-space:nowrap;flex:none}
+/* Moderator: reports to review */
+.modrow{margin-top:2px}
+.modcount{background:#c2334d;color:#fff;border-radius:999px;font-size:12px;font-weight:700;padding:2px 8px;flex:none}
+.modcard{display:flex;gap:12px;align-items:flex-start;padding:12px}
+.modimg{width:96px;aspect-ratio:3/4;object-fit:cover;border-radius:12px;flex:none;background:var(--chip)}
+.modimg.gone{display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;color:var(--muted);padding:6px}
+.modbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.modbody p{margin:0}
+.modacts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.warn{color:#c2334d}

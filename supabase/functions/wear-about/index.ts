@@ -305,6 +305,18 @@ async function handleNotify(admin: any, body: any) {
     sender = rec.user_id; recipients = [rec.friend_id]; kind = "friend";
     const { data: p } = await admin.from("profiles").select("handle").eq("id", sender).maybeSingle();
     msg = { title: "New friend on WearAbout", body: `You and ${p?.handle || "a friend"} are now friends 💛`, url: "./?go=friends" };
+  } else if (body.table === "reports" && rec.id) {
+    // A new report: tell every moderator right away (no daily limit, no off switch).
+    const { data: r } = await admin.from("reports").select("id,reason,created_at").eq("id", rec.id).maybeSingle();
+    if (!r || !recent(r.created_at)) return json(200, { ok: true });
+    const { data: mods } = await admin.from("moderators").select("user_id");
+    const ids = (mods ?? []).map((m: { user_id: string }) => m.user_id);
+    if (!ids.length) return json(200, { ok: true });
+    const { data: subs } = await admin.from("push_subs").select("endpoint,p256dh,auth,user_id").in("user_id", ids);
+    const v = await vapidKeys(admin);
+    const m = { title: "New report to review", body: `${r.reason}. Review it within 24 hours.`, url: "./?go=reports" };
+    await Promise.all((subs ?? []).map((s: { endpoint: string; p256dh: string; auth: string }) => sendPush(admin, v, s, m)));
+    return json(200, { ok: true, sent: (subs ?? []).length });
   } else return json(200, { ok: true });
 
   if (!recipients.length) return json(200, { ok: true });
@@ -322,6 +334,66 @@ async function handleNotify(admin: any, body: any) {
   const v = await vapidKeys(admin);
   await Promise.all((subs ?? []).map((s: { endpoint: string; p256dh: string; auth: string }) => sendPush(admin, v, s, msg)));
   return json(200, { ok: true, sent: (subs ?? []).length });
+}
+
+/* ------------------------------------------------------------------ moderation (reports) */
+
+async function isModerator(admin: any, uid: string) {
+  const { data } = await admin.from("moderators").select("user_id").eq("user_id", uid).maybeSingle();
+  return !!data;
+}
+// Open reports, newest first, with the reported photo and who's involved.
+async function modList(admin: any) {
+  const { data: reps, error } = await admin.from("reports").select("id,post_id,reported_user,reporter,reason,details,image_path,created_at")
+    .is("reviewed_at", null).order("created_at", { ascending: false }).limit(50);
+  if (error) return json(500, { error: error.message });
+  const people = [...new Set((reps ?? []).flatMap((r: any) => [r.reported_user, r.reporter]).filter(Boolean))];
+  const { data: profs } = people.length ? await admin.from("profiles").select("id,handle").in("id", people) : { data: [] };
+  const name = (id: string) => (profs ?? []).find((p: any) => p.id === id)?.handle || "Someone";
+  const paths = [...new Set((reps ?? []).map((r: any) => r.image_path).filter(Boolean))] as string[];
+  const { data: signed } = paths.length ? await admin.storage.from("posts").createSignedUrls(paths, 3600) : { data: [] };
+  const urlFor = (p: string) => (signed ?? []).find((x: any) => x.path === p)?.signedUrl || null;
+  // How many reports each person has had in total, to spot repeat problems.
+  const counts: Record<string, number> = {};
+  if (people.length) {
+    const { data: all } = await admin.from("reports").select("reported_user").in("reported_user", people);
+    for (const r of all ?? []) counts[r.reported_user] = (counts[r.reported_user] ?? 0) + 1;
+  }
+  const { data: live } = await admin.from("posts").select("id").in("id", (reps ?? []).map((r: any) => r.post_id).filter(Boolean));
+  const liveIds = new Set((live ?? []).map((p: any) => p.id));
+  return json(200, { reports: (reps ?? []).map((r: any) => ({
+    id: r.id, reason: r.reason, details: r.details, created_at: r.created_at,
+    post_id: r.post_id, post_live: liveIds.has(r.post_id), image: r.image_path ? urlFor(r.image_path) : null,
+    reported_user: r.reported_user, reported_name: name(r.reported_user), reported_count: counts[r.reported_user] ?? 0,
+    reporter_name: name(r.reporter),
+  })) });
+}
+// Decide a report: dismiss it, remove the post, or remove the post and ban the person.
+async function modResolve(admin: any, uid: string, id: unknown, decision: unknown) {
+  if (!["dismiss", "remove", "ban"].includes(String(decision))) return json(400, { error: "Unknown decision." });
+  const { data: r } = await admin.from("reports").select("id,post_id,reported_user").eq("id", id).maybeSingle();
+  if (!r) return json(404, { error: "Report not found." });
+  const removePost = async (postId: string) => {
+    const { data: p } = await admin.from("posts").select("id,image_path,plugs").eq("id", postId).maybeSingle();
+    if (!p) return;
+    const files = [p.image_path, ...((p.plugs ?? []) as any[]).map((x) => x.img)].filter(Boolean);
+    if (files.length) await admin.storage.from("posts").remove(files);
+    await admin.from("posts").delete().eq("id", postId);
+  };
+  // Close every open report about the same post (or, for a ban, about the same person) first,
+  // because removing the post clears post_id on its reports.
+  let q = admin.from("reports").update({ reviewed_at: new Date().toISOString(), decision: String(decision) }).is("reviewed_at", null);
+  q = decision === "ban" && r.reported_user ? q.eq("reported_user", r.reported_user) : r.post_id ? q.eq("post_id", r.post_id) : q.eq("id", r.id);
+  const { error: upErr } = await q;
+  if (upErr) return json(500, { error: upErr.message });
+  if (decision !== "dismiss" && r.post_id) await removePost(r.post_id);
+  if (decision === "ban" && r.reported_user && r.reported_user !== uid) {
+    const { data: theirs } = await admin.from("posts").select("id").eq("user_id", r.reported_user);
+    for (const p of theirs ?? []) await removePost(p.id);
+    const { error } = await admin.auth.admin.updateUserById(r.reported_user, { ban_duration: "876000h" });
+    if (error) return json(500, { error: "Couldn't ban: " + error.message });
+  }
+  return json(200, { ok: true });
 }
 
 /* ------------------------------------------------------------------ delete account */
@@ -377,6 +449,11 @@ Deno.serve(async (req) => {
   if (!body) return json(400, { error: "Bad request." });
   // Delete my account: every photo I stored, then the account itself (which removes all my rows).
   if (body.action === "deleteAccount") return deleteAccount(admin, user.id);
+  // Reviewing reports: moderators only.
+  if (body.action === "modList" || body.action === "modResolve") {
+    if (!(await isModerator(admin, user.id))) return json(403, { error: "Not allowed." });
+    return body.action === "modList" ? modList(admin) : modResolve(admin, user.id, (body as any).id, (body as any).decision);
+  }
   // Photos only go to the AI services after the person has agreed in the app (App Store rule 5.1.2).
   {
     const { data: st, error: stErr } = await admin.from("user_settings").select("ai_consent_at").eq("user_id", user.id).maybeSingle();

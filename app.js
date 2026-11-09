@@ -64,7 +64,7 @@ const APP_URL = location.origin + location.pathname;
   if(code||tok){ const u=new URL(location.href); u.searchParams.delete("invite"); u.searchParams.delete("t"); history.replaceState(null,"",u.pathname+u.search+u.hash); }
 })();
 // Opening from a notification: ?go=feed or ?go=friends.
-const START_VIEW = (()=>{ const g=new URLSearchParams(location.search).get("go"); if(g){ const u=new URL(location.href); u.searchParams.delete("go"); history.replaceState(null,"",u.pathname+u.search+u.hash); } return ["feed","friends"].includes(g)?g:null; })();
+const START_VIEW = (()=>{ const g=new URLSearchParams(location.search).get("go"); if(g){ const u=new URL(location.href); u.searchParams.delete("go"); history.replaceState(null,"",u.pathname+u.search+u.hash); } return ["feed","friends","reports"].includes(g)?g:null; })();
 const pendingInvite = () => { try{ return localStorage.getItem("wa_invite")||""; }catch{ return ""; } };
 const pendingToken = () => { try{ return localStorage.getItem("wa_invite_t")||""; }catch{ return ""; } };
 const clearInvite = () => { try{ localStorage.removeItem("wa_invite"); localStorage.removeItem("wa_invite_t"); }catch{} };
@@ -164,6 +164,7 @@ async function loadMine(){
   // AI consent (App Store rule): before the database has the column, treat everyone as agreed so nothing breaks.
   S.consentReady=!!(g.data ? ("ai_consent_at" in g.data) : await sb.from("user_settings").select("ai_consent_at").limit(1).then(r=>!r.error));
   S.aiConsent=!S.consentReady || !!(g.data&&g.data.ai_consent_at); S.aiConsentAt=(g.data&&g.data.ai_consent_at)||null;
+  sb.from("moderators").select("user_id").eq("user_id",S.uid).maybeSingle().then(r=>{ S.isMod=!r.error&&!!r.data; if(S.isMod) loadReports(); });
   sb.from("blocks").select("blocked,blocked_name").then(r=>{ S.blocksReady=!r.error; S.blocks=r.data||[]; softRender(["profile"]); });
   S.notifyReady=!!(g.data ? ("notify_posts" in g.data) : await sb.from("user_settings").select("notify_posts").limit(1).then(r=>!r.error));
   S.notify={posts:!(g.data&&g.data.notify_posts===false), friends:!(g.data&&g.data.notify_friends===false)};
@@ -291,7 +292,7 @@ function render(){
   const v=S.view;
   const prev=S.renderedView; S.renderedView=v+"|"+(S.flow?S.flow.step:"")+"|"+(S.fitId||"")+"|"+(S.itemId||"");
   if(prev!==S.renderedView) S.dimOpen=null;   // each fit's score opens with all notes closed
-  const html = v==="flow"?(S.flow&&S.flow.step==="result"?viewResult():viewFlow()) : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="profile"?viewProfile() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
+  const html = v==="flow"?(S.flow&&S.flow.step==="result"?viewResult():viewFlow()) : v==="fit"?viewFit() : v==="share"?viewShare() : v==="feed"?viewFeed() : v==="saved"?viewSaved() : v==="friends"?viewFriends() : v==="profile"?viewProfile() : v==="reports"?viewReports() : v==="closet"?viewCloset() : v==="item"?viewItem() : viewHome();
   const sheets = consentSheet() + (v==="feed" ? reportSheet()+blockSheet() : "");
   // A different screen starts fresh (so old open panels don't carry over); the same screen updates in place.
   if(prev!==S.renderedView) m.innerHTML=html+sheets; else setHTML(m, html+sheets);
@@ -314,8 +315,8 @@ function watchHero(){
 }
 function renderTabs(){
   const homeish=["home","fit","flow","share"].includes(S.view);
-  const on=id=>id==="home"?homeish:id==="closet"?["closet","item"].includes(S.view):id==="friends"?["friends","profile"].includes(S.view):S.view===id;
-  const dot=id=>(id==="feed"&&S.dotFeed)||(id==="friends"&&S.dotFriends);
+  const on=id=>id==="home"?homeish:id==="closet"?["closet","item"].includes(S.view):id==="friends"?["friends","profile","reports"].includes(S.view):S.view===id;
+  const dot=id=>(id==="feed"&&S.dotFeed)||(id==="friends"&&(S.dotFriends||(S.isMod&&(S.modReports||[]).length>0)));
   const t=(id,label,icon)=>`<button class="tab ${on(id)?"on":""}" data-act="nav" data-view="${id}" aria-current="${on(id)?"page":"false"}" ${dot(id)?`aria-label="${label}, something new"`:""}>${icon}<span>${label}</span>${dot(id)?`<i class="tabdot" aria-hidden="true"></i>`:""}</button>`;
   setHTML($("#tabs"), t("home","Fits",ICON.hanger)+t("feed","Feed",ICON.feed)+t("closet","Closet",ICON.closet)+t("saved","Recs",ICON.bulb)+t("friends","Friends",ICON.people));
 }
@@ -1076,6 +1077,42 @@ function privacyPanel(){
     <div class="prow links"><a class="link small" href="privacy.html" target="_blank" rel="noopener">Privacy policy</a><a class="link small" href="terms.html" target="_blank" rel="noopener">Terms of use</a></div>
   </div>`;
 }
+/* --- reviewing reports (moderators only) --- */
+async function modResolve(id,decision){
+  S.modBusy=id; render();
+  try{ await callFn("wear-about",{action:"modResolve", id, decision});
+    S.modReports=(S.modReports||[]).filter(r=>r.id!==id); toast(decision==="dismiss"?"Marked as fine":decision==="remove"?"Post removed":"Banned and posts removed");
+    loadReports(); S.socialAt=0; }
+  catch(e){ toast(e.message||"Couldn't do that. Try again."); }
+  S.modBusy=null; render();
+}
+async function loadReports(){
+  if(!S.isMod) return; S.modLoading=true; softRender(["reports","profile"]);
+  try{ const r=await callFn("wear-about",{action:"modList"}); S.modReports=r.reports||[]; S.modErr=""; }
+  catch(e){ S.modErr=e.message||"Couldn't load reports."; }
+  S.modLoading=false; render();
+}
+function viewReports(){
+  const list=S.modReports||[];
+  let out=`<button class="back" data-act="nav" data-view="profile">${ICON.back} Profile</button><div class="stack"><div class="row"><h2>Reports</h2><span class="spacer"></span><button class="link small" data-act="modRefresh">Refresh</button></div>
+    <p class="small muted" style="margin:0">Review each report within 24 hours. Remove anything that breaks the rules; ban people who post abusive or illegal content.</p>`;
+  if(S.modErr) out+=`<div class="note">${esc(S.modErr)}</div>`;
+  if(S.modLoading&&!list.length) out+=`<p class="muted">Loading…</p>`;
+  else if(!list.length) out+=`<div class="empty"><b>All clear</b><p class="small muted">No reports waiting.</p></div>`;
+  for(const r of list){
+    const busy=S.modBusy===r.id;
+    out+=`<div class="panel modcard" data-key="rep-${r.id}">
+      ${r.image&&r.post_live?`<img class="modimg" src="${esc(r.image)}" alt="Reported post">`:`<div class="modimg gone">${r.post_live?"No photo":"Post already removed"}</div>`}
+      <div class="modbody"><b>${esc(r.reason)}</b>${r.details?`<p class="small">“${esc(r.details)}”</p>`:""}
+        <p class="small muted">${esc(r.reported_name)}'s post · reported by ${esc(r.reporter_name)} · ${esc(ago(r.created_at))}${r.reported_count>1?` · <b class="warn">${r.reported_count} reports on this person</b>`:""}</p>
+        <div class="modacts"><button class="btn sm" data-act="modDecide" data-id="${r.id}" data-d="dismiss" ${busy?"disabled":""}>It's fine</button>
+          ${r.post_live?`<button class="btn sm primary" data-act="modDecide" data-id="${r.id}" data-d="remove" ${busy?"disabled":""}>Remove post</button>`:""}
+          <button class="btn sm dangerfill" data-act="modDecide" data-id="${r.id}" data-d="ban" ${busy?"disabled":""}>Ban ${esc(r.reported_name)}</button></div>
+        ${S.modConfirm===r.id?`<div class="note small">Banning removes all of ${esc(r.reported_name)}'s posts and blocks them from signing in. <button class="link small danger" data-act="modBan" data-id="${r.id}">Yes, ban</button> <button class="link small" data-act="modCancel">Cancel</button></div>`:""}
+      </div></div>`;
+  }
+  return out+`</div>`;
+}
 function viewProfile(){
   const p=S.profile;
   return `<button class="back" data-act="nav" data-view="friends">${ICON.back} Friends</button><div class="stack"><h2>Profile</h2>
@@ -1094,6 +1131,7 @@ function viewProfile(){
     </div>
     <div class="panel goalpanel"><h3>Style goal</h3><p class="small muted" style="margin:0">Your score leans toward the look you're going for.</p>${goalRow()}</div>
     ${S.notifyReady?notifyPanel():""}
+    ${S.isMod?`<button class="merow modrow" data-act="nav" data-view="reports"><span class="pline"><b>🛡️ Reports to review</b><span class="small muted">${(S.modReports||[]).length?`${(S.modReports||[]).length} waiting`:"All clear"}</span></span>${(S.modReports||[]).length?`<span class="modcount">${(S.modReports||[]).length}</span>`:""}<span class="chev" aria-hidden="true">›</span></button>`:""}
     ${privacyPanel()}
     ${avatarSheet()}${deleteSheet()}
     <p class="small muted" style="text-align:center">Signed in as ${esc(S.email)}</p>
@@ -1755,7 +1793,7 @@ document.addEventListener("touchend",()=>{
 
 /* ---------- actions ---------- */
 const ACT = {
-  nav:t=>{ S.nameStatus=""; S.nudgeHold=false; S.shareOffer=null; S.homeFlash=null; S.view=t.dataset.view; if(S.view==="feed"){ seenSet("feed"); S.dotFeed=false; } if(S.view==="friends"){ seenSet("friends"); S.dotFriends=false; } S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
+  nav:t=>{ S.nameStatus=""; S.nudgeHold=false; S.shareOffer=null; S.homeFlash=null; S.view=t.dataset.view; if(S.view==="feed"){ seenSet("feed"); S.dotFeed=false; } if(S.view==="friends"){ seenSet("friends"); S.dotFriends=false; } if(S.view==="reports") loadReports(); S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
     if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
   log:()=>{ if(!S.aiConsent){ S.consentAsk=true; render(); return; } S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
   consentYes:()=>{ S.aiConsent=true; S.consentAsk=false; S.aiConsentAt=new Date().toISOString();
@@ -1914,6 +1952,10 @@ const ACT = {
     render(); },
   addBack:async t=>{ try{ await addFriend(t.dataset.uid); toast("You're now friends"); }catch{ toast("Couldn't add them back."); } render(); },
   signOut:async()=>{ await sb.auth.signOut(); },
+  modRefresh:()=>loadReports(),
+  modDecide:t=>{ const id=+t.dataset.id; if(t.dataset.d==="ban"){ S.modConfirm=id; render(); return; } modResolve(id,t.dataset.d); },
+  modBan:t=>{ S.modConfirm=null; modResolve(+t.dataset.id,"ban"); },
+  modCancel:()=>{ S.modConfirm=null; render(); },
   reportPost:t=>{ const p=S.posts.find(z=>z.id===t.dataset.id); S.report={id:t.dataset.id, who:p&&p.user_id, reason:"", details:""}; S.postOpen=null; render(); },
   reportReason:t=>{ if(!S.report) return; S.report.reason=t.dataset.r; render(); },
   reportClose:()=>{ S.report=null; render(); },
@@ -2034,7 +2076,8 @@ async function acceptInvite(){
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js").catch(()=>{});
   // A notification tapped while the app is already open: jump to that screen.
-  navigator.serviceWorker.addEventListener("message", e=>{ const g=e.data&&e.data.go; if(S.uid && ["feed","friends"].includes(g)){ S.view=g; seenSet(g); S.share=null; S.flow=null; render(); scrollTo(0,0); loadSocial().then(()=>softRender([g])).catch(()=>{}); } });
+  navigator.serviceWorker.addEventListener("message", e=>{ const g=e.data&&e.data.go; if(S.uid && g==="reports"){ S.view="reports"; render(); scrollTo(0,0); loadReports(); return; }
+    if(S.uid && ["feed","friends"].includes(g)){ S.view=g; seenSet(g); S.share=null; S.flow=null; render(); scrollTo(0,0); loadSocial().then(()=>softRender([g])).catch(()=>{}); } });
 }
 if(sb){
   sb.auth.onAuthStateChange((_ev,session)=>{ setTimeout(()=>onSession(session),0); });
