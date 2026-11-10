@@ -1,0 +1,19 @@
+{
+  "appId": "com.wearaboutapp.wearabout",
+  "appName": "WearAbout",
+  "webDir": "www",
+  "backgroundColor": "#F4F3F0",
+  "ios": {
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
+  }
+}

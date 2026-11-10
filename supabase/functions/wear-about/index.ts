@@ -243,7 +243,7 @@ async function vapidKeys(admin: any): Promise<Vapid> {
 
 async function vapidHeader(endpoint: string, v: Vapid) {
   const aud = new URL(endpoint).origin, exp = Math.floor(Date.now() / 1000) + 12 * 3600;
-  const unsigned = `${b64u(enc.encode(JSON.stringify({ typ: "JWT", alg: "ES256" })))}.${b64u(enc.encode(JSON.stringify({ aud, exp, sub: "mailto:hello@wearabout.app" })))}`;
+  const unsigned = `${b64u(enc.encode(JSON.stringify({ typ: "JWT", alg: "ES256" })))}.${b64u(enc.encode(JSON.stringify({ aud, exp, sub: "mailto:WearAboutApp@gmail.com" })))}`;
   const key = await crypto.subtle.importKey("jwk", v.privateJwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, enc.encode(unsigned));
   return `vapid t=${unsigned}.${b64u(sig)}, k=${v.publicKey}`;
@@ -269,7 +269,34 @@ export async function encryptPush(payload: Uint8Array, p256dh: string, authSecre
 }
 
 // deno-lint-ignore no-explicit-any
+/* Apple Push Notification service, for the iPhone app. Set these secrets in Supabase once you have an APNs key:
+   APNS_KEY_ID, APNS_TEAM_ID, APNS_KEY (the whole .p8 file), APNS_BUNDLE_ID, and APNS_SANDBOX=true while testing from Xcode. */
+let apnsJwt = { token: "", at: 0 };
+async function apnsToken() {
+  if (apnsJwt.token && Date.now() - apnsJwt.at < 40 * 60e3) return apnsJwt.token;   // Apple wants a fresh one every 20-60 minutes
+  const kid = Deno.env.get("APNS_KEY_ID"), iss = Deno.env.get("APNS_TEAM_ID"), pem = Deno.env.get("APNS_KEY");
+  if (!kid || !iss || !pem) return null;
+  const der = Uint8Array.from(atob(pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "")), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("pkcs8", der, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const unsigned = `${b64u(enc.encode(JSON.stringify({ alg: "ES256", kid })))}.${b64u(enc.encode(JSON.stringify({ iss, iat: Math.floor(Date.now() / 1000) })))}`;
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, enc.encode(unsigned));
+  apnsJwt = { token: `${unsigned}.${b64u(sig)}`, at: Date.now() };
+  return apnsJwt.token;
+}
+async function sendApns(admin: any, endpoint: string, msg: { title: string; body: string; url: string }) {
+  const jwt = await apnsToken(), topic = Deno.env.get("APNS_BUNDLE_ID") || "com.wearaboutapp.wearabout";
+  if (!jwt) { console.error("apns: APNS_* secrets not set"); return; }
+  const host = Deno.env.get("APNS_SANDBOX") === "true" ? "api.sandbox.push.apple.com" : "api.push.apple.com";
+  const token = endpoint.slice(5);
+  const res = await fetch(`https://${host}/3/device/${token}`, { method: "POST", headers: {
+    authorization: `bearer ${jwt}`, "apns-topic": topic, "apns-push-type": "alert", "apns-priority": "10", "content-type": "application/json" },
+    body: JSON.stringify({ aps: { alert: { title: msg.title, body: msg.body }, sound: "default" }, url: msg.url }) });
+  if (res.status === 410 || res.status === 400 && (await res.clone().text()).includes("BadDeviceToken")) await admin.from("push_subs").delete().eq("endpoint", endpoint);
+  else if (!res.ok) console.error("apns", res.status, (await res.text()).slice(0, 200));
+}
+
 async function sendPush(admin: any, v: Vapid, sub: { endpoint: string; p256dh: string; auth: string }, msg: { title: string; body: string; url: string }) {
+  if (sub.endpoint.startsWith("apns:")) { try { await sendApns(admin, sub.endpoint, msg); } catch (e) { console.error("apns", String(e)); } return; }
   try {
     const body = await encryptPush(enc.encode(JSON.stringify(msg)), sub.p256dh, sub.auth);
     const res = await fetch(sub.endpoint, { method: "POST", body, headers: {

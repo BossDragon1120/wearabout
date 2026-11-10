@@ -9,6 +9,8 @@ Snap your outfit, say where you're going, and get it back on a clean studio or t
 
 Your Photoroom and Anthropic keys live only in Supabase's server function, never in the app.
 
+**iPhone app (TestFlight / App Store):** see [IPHONE.md](IPHONE.md).
+
 ## One-time setup (about 30 minutes)
 
 ### 1. Supabase project

@@ -8,7 +8,27 @@ const sb = CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 }) : null;
 
+/* ---------- running inside the iPhone app (Capacitor) or a browser ---------- */
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const plugin = name => NATIVE && window.Capacitor.Plugins ? window.Capacitor.Plugins[name] : null;
+if(NATIVE) document.documentElement.classList.add("native");
+
 /* ---------- constants ---------- */
+// Share text, or a picture, through the phone's share sheet. In the iPhone app this uses the native share sheet.
+async function shareOut({ text="", title="WearAbout", blob=null, filename="wearabout.png" }){
+  if(NATIVE && plugin("Share")){
+    let files;
+    if(blob){ const FS=plugin("Filesystem"); const data=await base64(blob);
+      const w=await FS.writeFile({ path:filename, data, directory:"CACHE" }); files=[w.uri]; }
+    try { await plugin("Share").share({ title, text: text||undefined, files }); return "shared"; }
+    catch(e){ if(/cancel/i.test(String(e&&e.message||e))) return "cancelled"; throw e; }
+  }
+  if(blob){ const file=new File([blob],filename,{type:blob.type||"image/png"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file], text:text||undefined}); return "shared"; }catch(e){ if(e&&e.name==="AbortError") return "cancelled"; throw e; } }
+    return "unsupported"; }
+  if(navigator.share){ try{ await navigator.share({title, text}); return "shared"; }catch(e){ if(e&&e.name==="AbortError") return "cancelled"; throw e; } }
+  return "unsupported";
+}
 const TERMS_VERSION = "2026-11-10";   // bump when the Terms or Privacy Policy change in an important way
 const CATS = ["Casual/Hangout","Errands","Office","WFH","Active/Workout","Night Out","Work Event","Get Fancy","Travel Day","Festival","Beach/Resort"];
 const DIMS = [["occasion_fit","Occasion fit",.30],["cohesion","Cohesion",.20],["proportion","Proportion & fit",.20],["color","Color",.20],["details","Finishing details",.10]];
@@ -55,7 +75,9 @@ const S = { imgOk:{}, imgLoading:{},
 
 /* ---------- invites ---------- */
 // A friend's invite link looks like .../wearabout/?invite=ABC123. Keep the code until they're signed in.
-const APP_URL = location.origin + location.pathname;
+// The public web address. Inside the iPhone app the page address is local (capacitor://), so links use the website.
+const WEB_URL = "https://bossdragon1120.github.io/wearabout/";
+const APP_URL = /^https?:$/.test(location.protocol) ? location.origin + location.pathname : WEB_URL;
 // Links also carry a private token (&t=...) that makes the friendship mutual right away.
 (function captureInvite(){
   const q=new URLSearchParams(location.search), code=q.get("invite"), tok=q.get("t");
@@ -359,7 +381,7 @@ async function submitAuth(){
       if(!a.agree) throw new Error("Please confirm you're 18 or older and agree to the Terms and Privacy Policy.");
       try{ localStorage.setItem("wa_agree_pending", TERMS_VERSION); }catch{}
       // If the email arrives as a link instead of a code, send it back to this exact app address.
-      const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser:true, emailRedirectTo: location.origin + location.pathname } });
+      const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser:true, emailRedirectTo: APP_URL } });
       if(error) throw error;
       a.email=email; a.step="code";
     } else {
@@ -1015,7 +1037,7 @@ async function sendWishlist(){
   if(!blob){ toast("Couldn't make the card. Try again."); return; }
   const file=new File([blob],"wishlist.png",{type:"image/png"});
   try{
-    if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file]}); S.buyShare=null; render(); return; }
+    const r=await shareOut({ blob, filename:"wishlist.png" }); if(r==="cancelled") return; if(r==="shared"){ S.buyShare=null; render(); return; }
   }catch(e){ if(e&&e.name==="AbortError") return; }
   // No way to share a picture here (e.g. a computer): save it instead.
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="wishlist.png"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
@@ -1213,7 +1235,7 @@ const isAndroid = () => /Android/.test(navigator.userAgent);
 addEventListener("beforeinstallprompt", e=>{ e.preventDefault(); S.installEvt=e; softRender(["home"]); });
 addEventListener("appinstalled", ()=>{ S.installEvt=null; softRender(["home"]); });
 function installBanner(){
-  if(!(isIOS()||isAndroid()) || standalone() || !S.loaded) return "";
+  if(NATIVE || !(isIOS()||isAndroid()) || standalone() || !S.loaded) return "";
   try{ const t=+localStorage.getItem("wa_install_hide")||0; if(Date.now()-t<7*864e5) return ""; }catch{}
   return `<div class="installbar"><span class="ib-icon" aria-hidden="true"><img src="icons/icon-192.png?v=2" alt=""></span>
     <span class="ib-text"><b>Add to your home screen</b><span class="small muted">${isIOS()?"Full screen, with notifications":"Opens like an app"}</span></span>
@@ -1236,7 +1258,7 @@ function installSheet(){
     <button class="btn primary block" data-act="installClose">Got it</button></div>`;
 }
 /* --- phone notifications --- */
-const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const pushSupported = () => NATIVE ? !!plugin("PushNotifications") : ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window);
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
 const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone===true;
 function notifyPanel(){
@@ -1253,7 +1275,27 @@ function notifyPanel(){
     ${st==="on"?sw("notifyPosts","Friend posts",S.notify.posts)+sw("notifyFriends","New friends",S.notify.friends):""}
     <p class="small muted">At most one per friend a day. In the app, a dot on Feed and Friends shows what's new.</p></div>`;
 }
+// In the iPhone app, notifications go through Apple (APNs). The phone's address is saved as "apns:<token>".
+let nativePushWired=false;
+function wireNativePush(){
+  const P=plugin("PushNotifications"); if(!P||nativePushWired) return; nativePushWired=true;
+  P.addListener("registration", async t=>{
+    const endpoint="apns:"+t.value; localStorage.setItem("wa_apns",endpoint);
+    const { error } = await sb.from("push_subs").upsert({ endpoint, p256dh:"", auth:"" });
+    if(error) console.error(error); else if(S.pushBusy||S.pushState!=="on"){ S.pushState="on"; S.pushBusy=false; render(); toast("Notifications on 🔔"); }
+  });
+  P.addListener("registrationError", e=>{ console.error("push",e); S.pushBusy=false; render(); toast("Couldn't turn on notifications. Try again."); });
+  P.addListener("pushNotificationActionPerformed", a=>{
+    const url=a&&a.notification&&a.notification.data&&a.notification.data.url; const g=url?new URL(url,location.href).searchParams.get("go"):null;
+    if(g==="reports"){ S.view="reports"; render(); loadReports(); }
+    else if(["feed","friends"].includes(g)){ S.view=g; seenSet(g); render(); scrollTo(0,0); loadSocial().then(()=>softRender([g])).catch(()=>{}); }
+  });
+}
 async function checkPush(){
+  if(NATIVE){ const P=plugin("PushNotifications"); if(!P){ S.pushState="unsupported"; return; } wireNativePush();
+    try{ const st=await P.checkPermissions(); S.pushState=st.receive==="denied"?"denied":(st.receive==="granted"&&localStorage.getItem("wa_apns"))?"on":"off";
+      if(S.pushState==="on") P.register(); }   // refresh the token each launch
+    catch{ S.pushState="off"; } softRender(["friends","profile"]); return; }
   if(!pushSupported()){ S.pushState="unsupported"; return; }
   if(Notification.permission==="denied"){ S.pushState="denied"; softRender(["friends","profile"]); return; }
   try { const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); S.pushState=sub?"on":"off"; }
@@ -1262,6 +1304,11 @@ async function checkPush(){
 }
 async function pushOn(){
   if(S.pushBusy) return; S.pushBusy=true; render();
+  if(NATIVE){ const P=plugin("PushNotifications"); wireNativePush();
+    try{ const st=await P.requestPermissions(); if(st.receive!=="granted"){ S.pushState=st.receive==="denied"?"denied":"off"; S.pushBusy=false; render(); return; }
+      await P.register(); }   // the "registration" listener saves the address and finishes
+    catch(e){ console.error(e); S.pushBusy=false; render(); toast("Couldn't turn on notifications. Try again."); }
+    return; }
   try {
     const perm=await Notification.requestPermission();
     if(perm!=="granted"){ S.pushState=perm==="denied"?"denied":"off"; return; }
@@ -1276,6 +1323,8 @@ async function pushOn(){
   finally { S.pushBusy=false; render(); }
 }
 async function pushOff(){
+  if(NATIVE){ const ep=localStorage.getItem("wa_apns"); if(ep) await sb.from("push_subs").delete().eq("endpoint",ep); localStorage.removeItem("wa_apns");
+    S.pushState="off"; render(); toast("Notifications off for this phone"); return; }
   try { const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription();
     if(sub){ await sb.from("push_subs").delete().eq("endpoint",sub.endpoint); await sub.unsubscribe(); } } catch(e){ console.error(e); }
   S.pushState="off"; render(); toast("Notifications off for this phone");
@@ -1995,7 +2044,7 @@ const ACT = {
     sb.from("invites").insert({token:tok}).then(({error})=>{ if(error) console.warn("invite token not saved (006_invites.sql not run?)", error.message); });
     const name=(S.profile.handle||"").trim(), link=`${APP_URL}?invite=${code}&t=${tok}`;
     const text=`👋 Hi! ${name?"It's "+name+". ":""}I've been logging my outfits on WearAbout and I'd love for you to join me 💛 Snap your fit, get a style score, and share your best looks with friends. Sign up here: ${link} (my friend code is ${code}) ✨`;
-    try { if(navigator.share){ await navigator.share({title:"WearAbout", text}); return; } } catch(e){ if(e && e.name==="AbortError") return; }
+    try { const r=await shareOut({title:"WearAbout", text}); if(r!=="unsupported") return; } catch(e){ console.error(e); }
     try { await navigator.clipboard.writeText(text); toast("Invite copied. Paste it into a message."); } catch { toast("Your link: "+link); }
   },
   // Send your saved buys as a plain list with a search link for each, e.g. to a friend or as gift ideas.
@@ -2151,7 +2200,7 @@ async function acceptInvite(){
   } catch(e){ console.error("invite",e); }
 }
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js").catch(()=>{});
+  if(!NATIVE) navigator.serviceWorker.register("sw.js").catch(()=>{});
   // A notification tapped while the app is already open: jump to that screen.
   navigator.serviceWorker.addEventListener("message", e=>{ const g=e.data&&e.data.go; if(S.uid && g==="reports"){ S.view="reports"; render(); scrollTo(0,0); loadReports(); return; }
     if(S.uid && ["feed","friends"].includes(g)){ S.view=g; seenSet(g); S.share=null; S.flow=null; render(); scrollTo(0,0); loadSocial().then(()=>softRender([g])).catch(()=>{}); } });
