@@ -634,3 +634,4 @@ button.mb{width:100%;border:0;background:none;font:inherit;color:inherit;text-al
 .modbody p{margin:0}
 .modacts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .warn{color:#c2334d}
+.prow.links{flex-wrap:wrap;row-gap:6px}

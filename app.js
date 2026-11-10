@@ -1074,7 +1074,7 @@ function privacyPanel(){
       ${S.aiConsent?`<button class="link small" data-act="consentWithdraw">Turn off</button>`:""}</div>`:""}
     ${S.blocksReady?`<div class="prow"><span><b>Blocked</b><span class="small muted">${blocks.length?"":"No one."}</span></span></div>
       ${blocks.map(b=>`<div class="person"><span class="pline"><b>${esc(b.blocked_name||"Someone")}</b></span><button class="link small" data-act="unblock" data-id="${esc(b.blocked)}">Unblock</button></div>`).join("")}`:""}
-    <div class="prow links"><a class="link small" href="privacy.html" target="_blank" rel="noopener">Privacy policy</a><a class="link small" href="terms.html" target="_blank" rel="noopener">Terms of use</a></div>
+    <div class="prow links"><a class="link small" href="support.html" target="_blank" rel="noopener">Help & support</a><a class="link small" href="privacy.html" target="_blank" rel="noopener">Privacy policy</a><a class="link small" href="terms.html" target="_blank" rel="noopener">Terms of use</a></div>
   </div>`;
 }
 /* --- reviewing reports (moderators only) --- */
