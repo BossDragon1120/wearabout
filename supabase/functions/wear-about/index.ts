@@ -40,7 +40,8 @@ const ITEM_TYPES = ["top", "bottom", "dress", "jacket", "outerwear", "shoes", "b
 
 /* ------------------------------------------------------------------ Claude: occasion, score, recs, items */
 
-const guessPrompt = () => `This photo shows a person's outfit. Guess what occasion they are dressed for, based only on the clothing you can see.
+const guessPrompt = () => `This photo shows a person's outfit. Guess what occasion they are dressed for, based only on the clothing, shoes and accessories you can see.
+Ignore the person entirely: their face (which may be covered on purpose), body, skin, hair and anything else about who they are.
 Choose exactly one category from this list: ${CATS.join(", ")}.
 If the photo doesn't clearly suggest one, still pick the closest and mark confidence "low".
 Reply with only JSON: {"category":"<one category from the list, spelled exactly>","confidence":"high"|"medium"|"low"}`;
@@ -55,15 +56,16 @@ const analyzePrompt = (cat: string, detail: string, goal: string, closet = "", b
 
 Rules you must follow:
 1. Never make things up. Name a brand or model only when a visible logo or an unmistakable design makes you confident; otherwise describe the item by color, material and garment type. If you can't tell something, leave it out. A wrong guess is worse than not knowing.
-2. Be kind and helpful. Talk only about the clothes and styling, never the person's body, face, weight, age or looks. Frame everything as making a good look even better. Kind does not mean inflated: score honestly.
+2. Look only at the clothes, shoes and accessories. The face may be covered on purpose: ignore it and never mention it. Never assess, describe or mention the person's body, shape, size, weight, height, skin, hair, face, age, gender, ethnicity or attractiveness, and don't infer anything about who they are. Never suggest changing the body or hiding part of it. Judge fit only as how the garments themselves are cut and sized (for example "the hem breaks nicely", "sleeves look a touch long").
+   Be kind and helpful: frame everything as making a good look even better. Kind does not mean inflated: score honestly.
 3. Help, don't sell. ${buy ? `Always give exactly one purchase idea: the single kind of item that would most improve this outfit for this occasion. Keep it practical and versatile, never a brand you made up.` : `The user has turned off purchase recommendations. Do not suggest buying anything; set "buy" to null.`}
 
 Score each dimension from 1 to 10 (one decimal allowed), with a note of at most 14 words:
 - occasion_fit: right formality and practicality for ${cat}
 - cohesion: the pieces read as one intentional look
-- proportion: silhouette, lengths and volumes balance; garments fit well
-- color: the palette works together and with the wearer
-- details: accessories, shoes, grooming and polish
+- proportion: the garments' silhouettes, lengths and volumes balance with each other; pieces are cut and sized well
+- color: the colors of the pieces work together
+- details: accessories, shoes, and finishing touches like tucks, rolls, layers and polish
 ${goal ? `- goal: how well the outfit moves toward the user's own style goal, "${goal}"
 ` : ""}
 "tweak": one change using things they likely already own (styling, tucking, cuffing, swapping a piece, layering, hair). It must improve the lowest-scoring dimension. "title" at most 8 words, "detail" at most 30 words, "dimension" is that dimension's key.
