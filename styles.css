@@ -635,3 +635,13 @@ button.mb{width:100%;border:0;background:none;font:inherit;color:inherit;text-al
 .modacts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .warn{color:#c2334d}
 .prow.links{flex-wrap:wrap;row-gap:6px}
+/* 18+ and terms agreement */
+.agree{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.4;margin:4px 0 12px;cursor:pointer;text-align:left}
+.agree input{width:20px;height:20px;flex:none;margin-top:1px;accent-color:var(--accent)}
+.agree a{color:inherit;text-decoration:underline}
+.gate h2{margin:18px 0 6px}
+.gate p{line-height:1.45}
+/* NCMEC steps after illegal content is taken down */
+.ncmec{border-color:#c2334d}
+.ncmec h3{color:#c2334d}
+.ncmecfacts{display:flex;flex-direction:column;gap:3px;background:var(--chip);border-radius:12px;padding:10px 12px;margin:8px 0;word-break:break-word}

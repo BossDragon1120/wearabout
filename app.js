@@ -9,6 +9,7 @@ const sb = CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 }) : null;
 
 /* ---------- constants ---------- */
+const TERMS_VERSION = "2026-11-10";   // bump when the Terms or Privacy Policy change in an important way
 const CATS = ["Casual/Hangout","Errands","Office","WFH","Active/Workout","Night Out","Work Event","Get Fancy","Travel Day","Festival","Beach/Resort"];
 const DIMS = [["occasion_fit","Occasion fit",.30],["cohesion","Cohesion",.20],["proportion","Proportion & fit",.20],["color","Color",.20],["details","Finishing details",.10]];
 const DIMS_GOAL = [["occasion_fit","Occasion fit",.25],["cohesion","Cohesion",.20],["proportion","Proportion & fit",.20],["color","Color",.15],["details","Finishing details",.10],["goal","Your goal",.10]];
@@ -162,6 +163,11 @@ async function loadMine(){
   ]);
   S.fits=f.data||[]; S.recs=r.data||[]; S.profile=p.data||null; S.goal=(g.data&&g.data.style_goal)||"";
   S.buyRecs=!(g.data && g.data.buy_recs===false);
+  // 18+ and Terms: before the database has the column, don't block anyone.
+  S.termsReady=!!(g.data ? ("terms_accepted_at" in g.data) : await sb.from("user_settings").select("terms_accepted_at").limit(1).then(r=>!r.error));
+  S.termsOk=!S.termsReady || !!(g.data&&g.data.terms_accepted_at);
+  if(S.termsReady && !S.termsOk){ let pend=null; try{ pend=localStorage.getItem("wa_agree_pending"); }catch{}
+    if(pend){ S.termsOk=true; acceptTerms(); } }
   // AI consent (App Store rule): before the database has the column, treat everyone as agreed so nothing breaks.
   S.consentReady=!!(g.data ? ("ai_consent_at" in g.data) : await sb.from("user_settings").select("ai_consent_at").limit(1).then(r=>!r.error));
   S.aiConsent=!S.consentReady || !!(g.data&&g.data.ai_consent_at); S.aiConsentAt=(g.data&&g.data.ai_consent_at)||null;
@@ -289,6 +295,7 @@ function render(){
   $("#appbar").hidden=!signedIn;
   if(!CONFIGURED){ setHTML(m,`<div class="auth"><div class="mark">Wear<span>About</span></div><div class="note">Almost there. Add your Supabase address and key to <b>config.js</b> (see the README), then reload.</div></div>`); return; }
   if(!signedIn){ setHTML(m, viewAuth()); return; }
+  if(S.loaded && !S.termsOk){ $("#appbar").hidden=true; if(heroObs){ heroObs.disconnect(); heroObs=null; } const fab=$("#fab"); if(fab) fab.hidden=true; S.renderedView="gate"; setHTML(m, viewGate()); return; }
   renderTabs();
   const v=S.view;
   const prev=S.renderedView; S.renderedView=v+"|"+(S.flow?S.flow.step:"")+"|"+(S.fitId||"")+"|"+(S.itemId||"");
@@ -332,6 +339,7 @@ function viewAuth(){
     ${a.step==="email" ? `
       <div class="field"><label for="authEmail">Email</label>
         <input class="input" id="authEmail" type="email" autocomplete="email" inputmode="email" value="${esc(a.email)}" placeholder="you@example.com" required></div>
+      <label class="agree"><input type="checkbox" id="authAgree" ${a.agree?"checked":""}><span>I'm 18 or older, and I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
       <button class="btn primary block" type="submit" ${a.busy?"disabled":""}>${a.busy?"Sending…":"Email me a sign-in code"}</button>`
     : `
       <p>We sent a code to <b>${esc(a.email)}</b>. Enter it here. If the email has a sign-in link instead, tapping it signs you in too.</p>
@@ -340,7 +348,6 @@ function viewAuth(){
       <button class="btn primary block" type="submit" ${a.busy?"disabled":""}>${a.busy?"Checking…":"Sign in"}</button>
       <button class="link" type="button" data-act="authBack">Use a different email</button>`}
     ${a.msg?`<p class="small">${esc(a.msg)}</p>`:""}
-    <p class="small muted legal">By continuing, you agree to our <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p>
   </form>`;
 }
 async function submitAuth(){
@@ -349,6 +356,8 @@ async function submitAuth(){
   try{
     if(a.step==="email"){
       const email=a.email.trim(); if(!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
+      if(!a.agree) throw new Error("Please confirm you're 18 or older and agree to the Terms and Privacy Policy.");
+      try{ localStorage.setItem("wa_agree_pending", TERMS_VERSION); }catch{}
       // If the email arrives as a link instead of a code, send it back to this exact app address.
       const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser:true, emailRedirectTo: location.origin + location.pathname } });
       if(error) throw error;
@@ -1040,6 +1049,21 @@ function viewFriends(){
   </div>`;
 }
 /* --- your profile (its own page, from the top of Friends) --- */
+/* --- 18+ and Terms acceptance --- */
+async function acceptTerms(){
+  const { error } = await sb.from("user_settings").upsert({user_id:S.uid, terms_accepted_at:new Date().toISOString(), terms_version:TERMS_VERSION, updated_at:new Date().toISOString()});
+  if(error){ console.error(error); return false; }
+  try{ localStorage.removeItem("wa_agree_pending"); }catch{} return true;
+}
+// Shown once to anyone signed in who hasn't confirmed yet (e.g. accounts made before this was added).
+function viewGate(){
+  return `<div class="auth gate"><div class="mark">Wear<span>About</span></div>
+    <h2>One quick thing</h2>
+    <p>WearAbout is for adults. Please confirm your age and agree to our Terms and Privacy Policy to keep going.</p>
+    <label class="agree"><input type="checkbox" id="gateAgree" ${S.gateAgree?"checked":""}><span>I'm 18 or older, and I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
+    <button class="btn primary block" id="gateBtn" data-act="gateYes" ${S.gateAgree?"":"disabled"}>Continue</button>
+    <button class="link small" data-act="signOut">I'm under 18 · Sign out</button></div>`;
+}
 /* --- App Store requirements: AI consent, report, block, delete account --- */
 function consentSheet(){
   if(!S.consentAsk) return "";
@@ -1053,7 +1077,7 @@ function consentSheet(){
     <button class="btn primary block" data-act="consentYes">Agree and add a photo</button>
     <button class="link small" data-act="consentNo">Not now</button></div>`;
 }
-const REPORT_REASONS=["Inappropriate or offensive","Harassment or bullying","Spam or a scam","Something else"];
+const REPORT_REASONS=["Inappropriate or offensive","Harassment or bullying","Spam or a scam","Involves a child or is illegal","Something else"];
 function reportSheet(){
   const r=S.report; if(!r) return "";
   const p=S.posts.find(z=>z.id===r.id);
@@ -1097,10 +1121,32 @@ function privacyPanel(){
   </div>`;
 }
 /* --- reviewing reports (moderators only) --- */
+// What to do after taking down illegal content: report to NCMEC's CyberTipline (required by 18 U.S.C. 2258A).
+function ncmecPanel(x){
+  const u=x.user||{};
+  return `<div class="panel ncmec"><h3>Report this to NCMEC now</h3>
+    <p class="small">The post is down, the account is banned, and a private copy is locked in your Supabase <b>evidence</b> storage. US law requires you to report child sexual abuse material to NCMEC as soon as you reasonably can, and to keep the copy for at least one year.</p>
+    <ol class="steps small"><li>Open <a href="https://report.cybertip.org/" target="_blank" rel="noopener">NCMEC's CyberTipline</a> and choose to report as an online service provider (they'll set up a provider account for future reports), or call 1-800-843-5678.</li>
+      <li>Include the details below. Don't attach or forward the image yourself unless NCMEC asks you to through their system.</li>
+      <li>Don't delete the evidence copy or the account record. If law enforcement contacts you, email them from WearAboutApp@gmail.com and keep a record.</li></ol>
+    <div class="ncmecfacts small">
+      <div><b>Report #</b> ${esc(String(x.report_id))}</div>
+      <div><b>Posted</b> ${esc(x.posted_at?new Date(x.posted_at).toLocaleString():"unknown")}</div>
+      <div><b>Reported</b> ${esc(x.reported_at?new Date(x.reported_at).toLocaleString():"unknown")}</div>
+      <div><b>Account name</b> ${esc(u.name||"unknown")}</div>
+      <div><b>Account email</b> ${esc(u.email||"unknown")}</div>
+      <div><b>Account ID</b> ${esc(u.id||"unknown")}</div>
+      <div><b>Account created</b> ${esc(u.joined?new Date(u.joined).toLocaleString():"unknown")}</div>
+      ${x.caption?`<div><b>Caption</b> ${esc(x.caption)}</div>`:""}
+      <div><b>Evidence file</b> ${esc((x.evidence||[]).join(", ")||"none (photo was already gone)")}</div>
+    </div>
+    <button class="link small" data-act="ncmecDone" data-id="${esc(String(x.report_id))}">I've reported it</button></div>`;
+}
 async function modResolve(id,decision){
   S.modBusy=id; render();
-  try{ await callFn("wear-about",{action:"modResolve", id, decision});
-    S.modReports=(S.modReports||[]).filter(r=>r.id!==id); toast(decision==="dismiss"?"Marked as fine":decision==="remove"?"Post removed":"Banned and posts removed");
+  try{ const res=await callFn("wear-about",{action:"modResolve", id, decision});
+    if(res&&res.illegal) (S.modIllegalDone||(S.modIllegalDone=[])).unshift(res.illegal);
+    S.modReports=(S.modReports||[]).filter(r=>r.id!==id); toast(decision==="dismiss"?"Marked as fine":decision==="remove"?"Post removed":decision==="illegal"?"Taken down and preserved. Report it to NCMEC next.":"Banned and posts removed");
     loadReports(); S.socialAt=0; }
   catch(e){ toast(e.message||"Couldn't do that. Try again."); }
   S.modBusy=null; render();
@@ -1116,6 +1162,7 @@ function viewReports(){
   let out=`<button class="back" data-act="nav" data-view="profile">${ICON.back} Profile</button><div class="stack"><div class="row"><h2>Reports</h2><span class="spacer"></span><button class="link small" data-act="modRefresh">Refresh</button></div>
     <p class="small muted" style="margin:0">Review each report within 24 hours. Remove anything that breaks the rules; ban people who post abusive or illegal content.</p>`;
   if(S.modErr) out+=`<div class="note">${esc(S.modErr)}</div>`;
+  for(const x of (S.modIllegalDone||[])) out+=ncmecPanel(x);
   if(S.modLoading&&!list.length) out+=`<p class="muted">Loading…</p>`;
   else if(!list.length) out+=`<div class="empty"><b>All clear</b><p class="small muted">No reports waiting.</p></div>`;
   for(const r of list){
@@ -1126,8 +1173,11 @@ function viewReports(){
         <p class="small muted">${esc(r.reported_name)}'s post · reported by ${esc(r.reporter_name)} · ${esc(ago(r.created_at))}${r.reported_count>1?` · <b class="warn">${r.reported_count} reports on this person</b>`:""}</p>
         <div class="modacts"><button class="btn sm" data-act="modDecide" data-id="${r.id}" data-d="dismiss" ${busy?"disabled":""}>It's fine</button>
           ${r.post_live?`<button class="btn sm primary" data-act="modDecide" data-id="${r.id}" data-d="remove" ${busy?"disabled":""}>Remove post</button>`:""}
-          <button class="btn sm dangerfill" data-act="modDecide" data-id="${r.id}" data-d="ban" ${busy?"disabled":""}>Ban ${esc(r.reported_name)}</button></div>
+          <button class="btn sm dangerfill" data-act="modDecide" data-id="${r.id}" data-d="ban" ${busy?"disabled":""}>Ban ${esc(r.reported_name)}</button>
+          <button class="link small danger" data-act="modDecide" data-id="${r.id}" data-d="illegal" ${busy?"disabled":""}>Illegal content…</button></div>
         ${S.modConfirm===r.id?`<div class="note small">Banning removes all of ${esc(r.reported_name)}'s posts and blocks them from signing in. <button class="link small danger" data-act="modBan" data-id="${r.id}">Yes, ban</button> <button class="link small" data-act="modCancel">Cancel</button></div>`:""}
+        ${S.modIllegalAsk===r.id?`<div class="note small"><b>Only for child sexual abuse material or other clearly illegal content.</b> This takes the post down, bans the account, and locks a private copy as evidence instead of deleting it. You'll then need to report it to NCMEC. Don't download, share or screenshot the image.
+          <div style="margin-top:8px"><button class="btn sm dangerfill" data-act="modIllegal" data-id="${r.id}">Take down and preserve</button> <button class="link small" data-act="modCancel">Cancel</button></div></div>`:""}
       </div></div>`;
   }
   return out+`</div>`;
@@ -1972,9 +2022,15 @@ const ACT = {
   addBack:async t=>{ try{ await addFriend(t.dataset.uid); toast("You're now friends"); }catch{ toast("Couldn't add them back."); } render(); },
   signOut:async()=>{ await sb.auth.signOut(); },
   modRefresh:()=>loadReports(),
-  modDecide:t=>{ const id=+t.dataset.id; if(t.dataset.d==="ban"){ S.modConfirm=id; render(); return; } modResolve(id,t.dataset.d); },
+  modDecide:t=>{ const id=+t.dataset.id; S.modConfirm=null; S.modIllegalAsk=null;
+    if(t.dataset.d==="ban"){ S.modConfirm=id; render(); return; }
+    if(t.dataset.d==="illegal"){ S.modIllegalAsk=id; render(); return; }
+    modResolve(id,t.dataset.d); },
+  modIllegal:t=>{ S.modIllegalAsk=null; modResolve(+t.dataset.id,"illegal"); },
+  ncmecDone:t=>{ S.modIllegalDone=(S.modIllegalDone||[]).filter(x=>String(x.report_id)!==t.dataset.id); render(); },
   modBan:t=>{ S.modConfirm=null; modResolve(+t.dataset.id,"ban"); },
-  modCancel:()=>{ S.modConfirm=null; render(); },
+  modCancel:()=>{ S.modConfirm=null; S.modIllegalAsk=null; render(); },
+  gateYes:async()=>{ if(!S.gateAgree) return; S.termsOk=true; render(); if(!(await acceptTerms())){ S.termsOk=false; render(); toast("Couldn't save that. Try again."); } },
   reportPost:t=>{ const p=S.posts.find(z=>z.id===t.dataset.id); S.report={id:t.dataset.id, who:p&&p.user_id, reason:"", details:""}; S.postOpen=null; render(); },
   reportReason:t=>{ if(!S.report) return; S.report.reason=t.dataset.r; render(); },
   reportClose:()=>{ S.report=null; render(); },
@@ -2025,6 +2081,8 @@ document.addEventListener("submit", e=>{ if(e.target.id==="authForm"){ e.prevent
 document.addEventListener("input", e=>{
   const t=e.target;
   if(t.id==="authEmail") S.auth.email=t.value;
+  else if(t.id==="authAgree") S.auth.agree=t.checked;
+  else if(t.id==="gateAgree"){ S.gateAgree=t.checked; const b=$("#gateBtn"); if(b) b.disabled=!t.checked; }
   else if(t.id==="authCode") S.auth.code=t.value;
   else if(t.id==="detail"&&S.flow) S.flow.detail=t.value;
   else if(t.dataset.itemI!=null){ curFit().items[t.dataset.itemI].label=t.value; S.itemsDirty=true; const b=$("#saveItemsBtn"); if(b) b.hidden=false; }

@@ -375,9 +375,10 @@ async function modList(admin: any) {
 }
 // Decide a report: dismiss it, remove the post, or remove the post and ban the person.
 async function modResolve(admin: any, uid: string, id: unknown, decision: unknown) {
-  if (!["dismiss", "remove", "ban"].includes(String(decision))) return json(400, { error: "Unknown decision." });
-  const { data: r } = await admin.from("reports").select("id,post_id,reported_user").eq("id", id).maybeSingle();
+  if (!["dismiss", "remove", "ban", "illegal"].includes(String(decision))) return json(400, { error: "Unknown decision." });
+  const { data: r } = await admin.from("reports").select("id,post_id,reported_user,image_path,created_at").eq("id", id).maybeSingle();
   if (!r) return json(404, { error: "Report not found." });
+  if (decision === "illegal") return modIllegal(admin, uid, r);
   const removePost = async (postId: string) => {
     const { data: p } = await admin.from("posts").select("id,image_path,plugs").eq("id", postId).maybeSingle();
     if (!p) return;
@@ -399,6 +400,40 @@ async function modResolve(admin: any, uid: string, id: unknown, decision: unknow
     if (error) return json(500, { error: "Couldn't ban: " + error.message });
   }
   return json(200, { ok: true });
+}
+
+// Illegal content (e.g. child sexual abuse material): federal law (18 U.S.C. 2258A) requires reporting it to NCMEC
+// and preserving it, so instead of deleting, lock a copy in the private evidence bucket, take the post down,
+// ban the account, and hand back the details needed for the CyberTipline report.
+async function modIllegal(admin: any, uid: string, r: any) {
+  const { data: post } = r.post_id ? await admin.from("posts").select("id,user_id,image_path,plugs,caption,created_at").eq("id", r.post_id).maybeSingle() : { data: null };
+  const files = [post?.image_path ?? r.image_path, ...(((post?.plugs ?? []) as any[]).map((x) => x.img))].filter(Boolean) as string[];
+  const kept: string[] = [];
+  for (const f of [...new Set(files)]) {
+    const { data: blob } = await admin.storage.from("posts").download(f);
+    if (!blob) continue;
+    const dest = `report-${r.id}/${f.replaceAll("/", "_")}`;
+    const { error } = await admin.storage.from("evidence").upload(dest, blob, { upsert: true, contentType: blob.type || "image/jpeg" });
+    if (error) return json(500, { error: "Couldn't preserve the evidence (run 011 in Supabase first): " + error.message });
+    kept.push(dest);
+  }
+  await admin.from("reports").update({ reviewed_at: new Date().toISOString(), decision: "illegal", evidence_path: kept.join(",") })
+    .is("reviewed_at", null).eq("reported_user", r.reported_user);
+  if (post) {
+    if (files.length) await admin.storage.from("posts").remove(files);
+    await admin.from("posts").delete().eq("id", post.id);
+  }
+  let who: any = null;
+  if (r.reported_user && r.reported_user !== uid) {
+    await admin.auth.admin.updateUserById(r.reported_user, { ban_duration: "876000h" });
+    const { data } = await admin.auth.admin.getUserById(r.reported_user);
+    const { data: prof } = await admin.from("profiles").select("handle").eq("id", r.reported_user).maybeSingle();
+    who = { id: r.reported_user, email: data?.user?.email ?? null, name: prof?.handle ?? null, joined: data?.user?.created_at ?? null, last_sign_in: data?.user?.last_sign_in_at ?? null };
+  }
+  return json(200, { ok: true, illegal: {
+    report_id: r.id, reported_at: r.created_at, posted_at: post?.created_at ?? null, caption: post?.caption ?? null,
+    user: who, evidence: kept.map((k) => `evidence/${k}`),
+  } });
 }
 
 /* ------------------------------------------------------------------ delete account */
