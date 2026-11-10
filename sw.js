@@ -1,7 +1,7 @@
 // WearAbout service worker: keeps the app shell available offline and fast to open.
 // Network first, so a new deploy shows up on the next open; the cache is only a fallback.
-const CACHE = "wearabout-v6";
-const SHELL = ["./", "index.html", "styles.css", "app.js", "config.js", "manifest.webmanifest",
+const CACHE = "wearabout-v7";
+const SHELL = ["./", "index.html", "styles.css", "app.js", "faces.js", "config.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {

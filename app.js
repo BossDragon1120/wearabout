@@ -1,6 +1,7 @@
 // WearAbout — standalone web app (GitHub Pages + Supabase + Photoroom + Claude).
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/+esm";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
+import { findFaces, maskFaces, restoreFaces, warmFaces } from "./faces.js";
 
 const CONFIGURED = !/YOUR-PROJECT|YOUR-ANON-KEY/.test(SUPABASE_URL + SUPABASE_ANON_KEY);
 const sb = CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -490,7 +491,7 @@ function viewFlow(){
         <input class="input" id="detail" maxlength="60" placeholder="Where you're headed: Fleet Week, dinner date…" value="${esc(f.detail)}">
         <p class="small muted">Helps your score and backdrop, and fills in your post if you share.</p></div>
       <label class="keepbg"><input type="checkbox" id="keepBg" ${f.keepBg?"checked":""}> Keep my own background</label>
-      <button class="btn primary block" data-act="runStyle" ${f.cat?"":"disabled"}>${f.keepBg?"Reveal my score":"Choose a backdrop"}</button></div>`;
+      <button class="btn primary block" data-act="runStyle" ${f.cat&&!f.waiting?"":"disabled"}>${f.waiting?"Covering your face for privacy…":f.keepBg?"Reveal my score":"Choose a backdrop"}</button></div>`;
   } else {
     const a=f.analysis;
     const tiles=f.keepBg?[["original","Original"]]:[["original","Original"],["studio","Studio"],["themed","Themed"]];
@@ -551,22 +552,34 @@ async function startFlow(file){
   const prev = S.replacing && S.flow && S.flow.step==="occasion" ? S.flow : null; S.replacing=false;
   if(!file) return;
   let img; try { img=await blobImage(file); } catch { toast("That file isn't a photo WearAbout can read."); return; }
-  const origBlob=await toBlob(scaled(img,1600),"image/jpeg",.88), origUrl=URL.createObjectURL(origBlob), b64=await base64(origBlob);
-  // Claude shrinks anything bigger than about 1.2 megapixels anyway, so send it a lighter copy.
-  const aiB64=await base64(await toBlob(scaled(img,1280),"image/jpeg",.85));
+  // The original stays on the phone and in your private storage. The copies sent to the AI services have faces covered.
+  const origCanvas=scaled(img,1600), origBlob=await toBlob(origCanvas,"image/jpeg",.88), origUrl=URL.createObjectURL(origBlob);
   if(S.flow && S.flow.origUrl) URL.revokeObjectURL(S.flow.origUrl);
   const keepCat = prev && prev.cat && prev.cat!==prev.guess ? prev.cat : null;
-  const f={step:"occasion", origBlob, origUrl, b64, aiB64, guess:null, guessConf:null, guessing:true, guessErr:null, cat:keepCat, detail:prev?prev.detail:"", keepBg:prev?!!prev.keepBg:false,
+  const f={step:"occasion", origBlob, origUrl, origCanvas, b64:null, aiB64:null, faces:[], guess:null, guessConf:null, guessing:true, guessErr:null, cat:keepCat, detail:prev?prev.detail:"", keepBg:prev?!!prev.keepBg:false,
     analysis:null, analysisErr:"", comps:{}, compState:{}, bg:null, bgErr:"", saving:false};
+  f.ready=(async()=>{
+    try { f.faces=await findFaces(origCanvas); } catch(e){ f.faceErr=e.message; console.warn("faces",e.message); }
+    const safe=f.faces.length?maskFaces(origCanvas,f.faces,1600):origCanvas; f.masked=safe;
+    f.b64=await base64(await toBlob(safe,"image/jpeg",.88));
+    // Claude shrinks anything bigger than about 1.2 megapixels anyway, so send it a lighter copy.
+    f.aiB64=await base64(await toBlob(scaled(safe,1280),"image/jpeg",.85));
+    f.guessB64=await base64(await toBlob(scaled(safe,800),"image/jpeg",.8));
+    f.isReady=true;
+  })();
   S.flow=f; S.view="flow"; render(); scrollTo(0,0);
   try {
-    const r=await callFn("wear-about",{action:"guess", image:await base64(await toBlob(scaled(img,800),"image/jpeg",.8))});
+    await f.ready;
+    const r=await callFn("wear-about",{action:"guess", image:f.guessB64});
     if(r.category){ f.guess=r.category; f.guessConf=r.confidence; if(!f.cat) f.cat=r.category; } else f.guessErr="Couldn't tell the occasion.";
   } catch(e){ f.guessErr=e.message; }
   f.guessing=false; if(S.flow===f && f.step==="occasion") render();
 }
 function runStyle(){
-  const f=S.flow; f.step=f.keepBg?"result":"style";
+  const f=S.flow;
+  // Wait until the face-covered copies are ready (normally done long before you tap Continue).
+  if(!f.isReady){ f.waiting=true; render(); f.ready.then(()=>{ f.waiting=false; if(S.flow===f) runStyle(); }); return; }
+  f.step=f.keepBg?"result":"style";
   f.comps.original={blob:f.origBlob,url:f.origUrl}; f.compState.original="ok";
   if(f.keepBg) f.bg="original";
   render(); scrollTo(0,0);
@@ -578,7 +591,12 @@ function runStyle(){
     if(f.comps[mode]){ URL.revokeObjectURL(f.comps[mode].url); delete f.comps[mode]; if(f.bg===mode) f.bg="original"; }
     f.compState[mode]="loading"; if(f.errs) delete f.errs[mode];
     callFn("wear-about",{action:"backdrop", mode, image:f.b64, category:f.cat, detail:f.detail},true)
-      .then(blob=>jpeg(blob,1440,.9))
+      .then(async blob=>{
+        if(!f.faces.length) return jpeg(blob,1440,.9);
+        // Put your real face back over the covered one.
+        const back=restoreFaces(await blobImage(blob), f.origCanvas, f.masked, f.faces);
+        if(!back) throw new Error("Couldn't line your face back up on this backdrop. Pick another, or keep your own background.");
+        return jpeg(back,1440,.9); })
       .then(blob=>{ if(f.compKey[mode]!==key) return; f.comps[mode]={blob,url:URL.createObjectURL(blob)}; f.compState[mode]="ok"; if(!f.bg||(f.bg==="original"&&!f.pickedBg)) f.bg=mode; })
       .catch(e=>{ if(f.compKey[mode]!==key) return; f.compState[mode]="failed"; f.bgErr=e.message; (f.errs||(f.errs={}))[mode]=e.message; console.error("backdrop",mode,e.message); if(!f.bg && f.compState.studio==="failed" && f.compState.themed==="failed") f.bg="original"; })
       .finally(()=>{ if(S.flow===f && S.view==="flow") render(); });
@@ -1030,6 +1048,7 @@ function consentSheet(){
     <p>To score your outfit, find the pieces for your closet, and make backdrops, WearAbout sends each fit photo you add to two services:</p>
     <ul class="consentlist"><li><b>Anthropic</b> (Claude AI) looks at the photo to score the outfit and list the pieces.</li>
       <li><b>Photoroom</b> removes the background to make your backdrops.</li></ul>
+    <p class="small">🙈 <b>Your face stays private.</b> Faces are covered on your phone before a photo is sent, and put back afterward.</p>
     <p class="small muted">They process your photo only to do this for you. Your photos and scores stay private unless you post to friends. You can turn this off any time in Profile. <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
     <button class="btn primary block" data-act="consentYes">Agree and add a photo</button>
     <button class="link small" data-act="consentNo">Not now</button></div>`;
@@ -1795,8 +1814,8 @@ document.addEventListener("touchend",()=>{
 const ACT = {
   nav:t=>{ S.nameStatus=""; S.nudgeHold=false; S.shareOffer=null; S.homeFlash=null; S.view=t.dataset.view; if(S.view==="feed"){ seenSet("feed"); S.dotFeed=false; } if(S.view==="friends"){ seenSet("friends"); S.dotFriends=false; } if(S.view==="reports") loadReports(); S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
     if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
-  log:()=>{ if(!S.aiConsent){ S.consentAsk=true; render(); return; } S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
-  consentYes:()=>{ S.aiConsent=true; S.consentAsk=false; S.aiConsentAt=new Date().toISOString();
+  log:()=>{ if(!S.aiConsent){ S.consentAsk=true; render(); return; } warmFaces(); S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
+  consentYes:()=>{ S.aiConsent=true; S.consentAsk=false; S.aiConsentAt=new Date().toISOString(); warmFaces();
     // Open the photo picker right away (it must happen inside the tap), then save the agreement.
     const i=$("#photoIn"); if(i){ S.replacing=false; i.value=""; i.click(); }
     sb.from("user_settings").upsert({user_id:S.uid, ai_consent_at:S.aiConsentAt, updated_at:new Date().toISOString()}).then(({error})=>{ if(error){ console.error(error); toast("Couldn't save your choice. Try again."); S.aiConsent=false; } });

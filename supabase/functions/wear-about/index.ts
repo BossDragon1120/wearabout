@@ -178,8 +178,11 @@ async function backdrop(key: string, image: string, mode: string, category: stri
   const bytes = Uint8Array.from(atob(image), (c) => c.charCodeAt(0));
   const form = new FormData();
   form.append("imageFile", new Blob([bytes], { type: "image/jpeg" }), "fit.jpg");
-  form.append("outputSize", "1080x1440");
-  form.append("padding", "0.07");
+  // Keep the photo's own size and framing, so the app can put the real face back exactly where it was
+  // (faces are covered on the phone before the photo is sent here).
+  form.append("outputSize", "originalImage");
+  form.append("referenceBox", "originalImage");
+  form.append("padding", "0");
   // JPEG instead of the default PNG: the backdrop fills the frame, so no transparency is needed,
   // and the file is several times smaller, so it reaches the phone much faster.
   form.append("export.format", "jpeg");
