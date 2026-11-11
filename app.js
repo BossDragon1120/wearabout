@@ -783,14 +783,13 @@ function viewShare(){
   const sh=S.share, x=curFit(); if(!sh||!x) return "";
   return `<button class="back" data-act="cancelShare">${ICON.back} Back</button><div class="stack">
     <h2>Share your fit</h2>
-    ${neverPosted()?`<div class="note">Your first post! Friends see the photo and caption. Your score always stays private.</div>`:""}
+    ${neverPosted()?`<div class="note">Your first post! Friends see your photo. Your score always stays private.</div>`:""}
     <canvas class="shareCanvas" id="shareCanvas" width="720" height="960" aria-label="Post preview"></canvas>
-    <div class="field"><label for="caption">Caption (optional)</label><input class="input" id="caption" maxlength="140" value="${esc(sh.caption)}" placeholder="Where you're headed: Fleet Week, dinner date…">${x.detail?`<p class="small muted">Your caption from logging this fit. Edit it for friends if you like; your saved fit keeps the original.</p>`:""}</div>
     ${S.chatReady?`<div class="chatpanel ${sh.chat?"on":""}">
-      <label class="switchrow" for="chatOn"><span><b>💬 Up for a chat?</b><span class="small muted">Friends can text or call you for the next ${CHAT_HOURS} hours.</span></span>
+      <label class="switchrow" for="chatOn"><span><b>💬 Up for a chat?</b><span class="small muted">Friends can text or call you for the next ${CHAT_HOURS} hours. Add a line about what's up, if you like.</span></span>
         <input type="checkbox" id="chatOn" class="switch" role="switch" ${sh.chat?"checked":""}></label>
       ${sh.chat?`<div class="chips">${chatLines(x).map(l=>`<button class="chip ${l===sh.chatTopic?"on":""}" data-act="chatLine" data-line="${esc(l)}">${esc(l)}</button>`).join("")}</div>
-        <div class="field"><label for="chatTopic" class="small">Or write your own</label><input class="input" id="chatTopic" maxlength="60" value="${esc(sh.chatTopic)}"></div>
+        <div class="field"><label for="chatTopic" class="small">Or write your own (optional)</label><input class="input" id="chatTopic" maxlength="60" value="${esc(sh.chatTopic)}"></div>
         ${S.myPhone?`<p class="small muted">Friends will reach you at ${esc(S.myPhone)}. <button class="link small" data-act="nav" data-view="friends">Change</button></p>`
         :`<div class="field"><label for="chatPhone">Your phone number</label><input class="input" id="chatPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${esc(sh.phone)}" placeholder="(555) 123-4567"><p class="small muted">Only your mutual friends can see it, and only to text or call you. You can remove it anytime on the Friends tab.</p></div>`}`:""}
     </div>`:""}
@@ -805,7 +804,7 @@ function viewShare(){
         <textarea class="input" data-plug-i="${i}" data-field="review" maxlength="160" placeholder="Why you love it (optional)">${esc(p.review)}</textarea>
         <p class="small muted">Friends get a Shop it button that searches for ${esc([p.brand, it.label].filter(Boolean).join(" "))}.${plugCrop(it)?" They'll see this close-up too.":""}</p>`:""}</div>`; }).join(""):""}</div>`:""}
     </div>
-    <p class="small muted">Only mutual friends see your post. Your score stays private, and friends can only react with hearts.</p>
+    <p class="small muted">Both are optional. Only mutual friends see your post. Your score stays private, and friends can only react with hearts.</p>
     <button class="btn primary block" data-act="postShare" ${sh.posting?"disabled":""}>${sh.posting?"Posting…":"Post to friends"}</button>
   </div>`;
 }
@@ -814,7 +813,7 @@ async function openShare(blob){
   if(!blob){ const { data, error } = await sb.storage.from("fits").download(x.image_path);
     if(error){ toast("Couldn't load this photo."); return; } blob=data; }
   let img; try { img=await blobImage(blob); } catch { toast("Couldn't load this photo."); return; }
-  S.share={img, caption:x.detail||"", plugs:{}, posting:false, chat:false, chatTopic:chatLines(x)[0], phone:""};
+  S.share={img, caption:x.detail||"", plugs:{}, posting:false, chat:false, chatTopic:"", phone:""};
   S.view="share"; render(); scrollTo(0,0);
   if(!S.chatReady){ const ph=await sb.from("contacts").select("phone").eq("user_id",S.uid).maybeSingle();
     if(!ph.error){ S.chatReady=true; S.myPhone=(ph.data&&ph.data.phone)||""; softRender(["share"]); } }
@@ -828,9 +827,9 @@ async function postShare(){
   const plugs=[];
   for(const [i,p] of Object.entries(sh.plugs)){ const it=x.items[i]; if(!it) continue;
     plugs.push({label:it.label, brand:String(p.brand||"").trim().slice(0,40), review:String(p.review||"").trim().slice(0,160), _crop:plugCrop(it)}); }
-  const topic=String(sh.chatTopic||"").trim().slice(0,60);
+  // The line about what's up is optional; without one, friends just see "Up for a chat".
+  const topic=String(sh.chatTopic||"").trim().slice(0,60)||"Up for a chat";
   if(sh.chat){
-    if(!topic){ toast("Add a line so friends know what to chat about."); return; }
     if(!S.myPhone && !cleanPhone(sh.phone)){ toast("Add a phone number so friends can reach you."); return; }
   }
   sh.posting=true; render();
@@ -848,7 +847,7 @@ async function postShare(){
         g.img=ip; S.urls["posts:"+ip]=url("fits",crop);
       } catch(e){ console.error("plug photo",e); }
     }));
-    const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:"", caption:sh.caption.trim().slice(0,140), plugs, badges:(x.analysis&&x.analysis.badges)||[], image_path:path,
+    const { error } = await sb.from("posts").insert({id, fit_id:x.id, category:x.category, detail:"", caption:"", plugs, badges:(x.analysis&&x.analysis.badges)||[], image_path:path,
       ...(sh.chat?{chat_topic:topic, chat_until:new Date(Date.now()+CHAT_HOURS*3600e3).toISOString()}:{})});
     if(error) throw error;
     S.urls["posts:"+path]=URL.createObjectURL(blob);
@@ -2016,7 +2015,7 @@ const ACT = {
   avatarCancel:()=>{ if(S.avatarEdit&&S.avatarEdit.busy) return; S.avatarEdit=null; render(); },
   avatarSave:()=>saveAvatar(),
   hookMore:t=>{ const o=S.hookOpen||(S.hookOpen=new Set()); o.has(t.dataset.id)?o.delete(t.dataset.id):o.add(t.dataset.id); render(); },
-  chatLine:t=>{ if(S.share){ S.share.chatTopic=t.dataset.line; render(); } },
+  chatLine:t=>{ if(S.share){ S.share.chatTopic=S.share.chatTopic===t.dataset.line?"":t.dataset.line; render(); } },
   endChat:t=>endChat(t.dataset.id),
   // Score breakdown: open one category's note at a time; tap again to close.
   dimOpen:t=>{ const k=t.dataset.k; S.dimOpen=S.dimOpen===k?null:k; render(); },
