@@ -934,7 +934,7 @@ function piecesPanel(p){
     else { const a=asks.find(x=>x.asker===S.uid);
       if(a&&a.answered_at) act=`<a class="pcact shop" href="${esc(google([a.answer_brand,q.label].filter(Boolean).join(" ")))}" target="_blank" rel="noopener noreferrer">${a.answer_brand?esc(a.answer_brand)+" · ":""}Shop it ↗</a>${a.answer_note?`<span class="pcnote">“${esc(a.answer_note)}”</span>`:""}`;
       else if(a) act=`<span class="pcact done">Asked ✓</span>`;
-      else if(allow) act=`<button class="pcact primary" data-act="askPiece" data-id="${esc(p.id)}" data-i="${i}">Love it! Where's it from?</button>`; }
+      else if(allow) act=`<button class="pcact primary" data-act="askPiece" data-id="${esc(p.id)}" data-i="${i}">💜 Where's it from?</button>`; }
     return `<div class="pcard">${img?`<img src="${esc(img)}" alt="" loading="lazy">`:`<span class="pcnoimg" aria-hidden="true">👕</span>`}<span class="pclabel">${esc(q.label)}</span>${act}</div>`;
   }).join("");
   const hint=mine?"Friends can tap a piece to ask where it's from.":allow?`Love something ${who} is wearing? Ask where it's from.`:`The pieces in ${who}'s outfit.`;
@@ -2074,7 +2074,11 @@ const ACT = {
   dimOpen:t=>{ const k=t.dataset.k; S.dimOpen=S.dimOpen===k?null:k; render(); },
   sharePieces:()=>{ const x=curFit(); S.share=null; S.view="fit"; S.fitBack=S.fitBack||"home"; render(); setTimeout(()=>document.querySelector(".items, [data-act=addItem]")?.scrollIntoView({behavior:"smooth",block:"center"}),100); },
   plugAsk:t=>{ const sh=S.share; if(!sh) return; sh.plugAsk=t.checked?"yes":"no"; if(sh.plugAsk!=="yes") sh.plugs={}; render(); },
-  postOpen:t=>{ const o=S.postOpen, k=t.dataset.kind; S.postOpen=o&&o.id===t.dataset.id&&o.kind===k?null:{id:t.dataset.id,kind:k}; render(); },
+  postOpen:t=>{ const o=S.postOpen, k=t.dataset.kind; S.postOpen=o&&o.id===t.dataset.id&&o.kind===k?null:{id:t.dataset.id,kind:k}; render();
+    // Opening the pieces from the 👀 or the photo: glide down so they're on screen.
+    if(S.postOpen&&k==="pieces") requestAnimationFrame(()=>{ const el=document.querySelector(`[data-key="post-${CSS.escape(t.dataset.id)}"] .pgrid`)?.closest(".ppanel"); if(!el) return;
+      const r=el.getBoundingClientRect(), tabs=($("#appbar")?.getBoundingClientRect().bottom)||0;
+      if(r.bottom>innerHeight-8||r.top<tabs) el.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth", block:r.height>innerHeight-tabs-24?"start":"end"}); }); },
   savePhone:async()=>{ const phone=cleanPhone(S.phoneIn ?? S.myPhone); if(!phone){ toast("That doesn't look like a phone number."); return; }
     const { error } = await sb.from("contacts").upsert({user_id:S.uid, phone, updated_at:new Date().toISOString()});
     if(error){ toast("Couldn't save your number."); return; } S.myPhone=phone; S.phoneIn=null; render(); toast("Number saved"); },
