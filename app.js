@@ -763,10 +763,10 @@ const CAPTION_LINES=[[/\b(happy hour|wine|cocktails?|drinks)\b/,"Happy hour! Wha
 function chatLines(x){
   const cap=normLabel(x.detail||""), out=[];
   const hit=CAPTION_LINES.find(([re])=>re.test(cap)); if(hit) out.push(hit[1]);
-  out.push(OCC_LINE[x.category]||"Let's catch up! What's new with you?");
-  if(x.detail && x.detail.length<=36) out.push(`${x.detail.replace(/[.!?]+$/,"")}! What are you up to?`);
+  // Just two: one that fits this outfit or occasion, and an easy general one.
+  if(!out.length) out.push(OCC_LINE[x.category]||"");
   out.push("Let's catch up! What's new with you?");
-  return [...new Set(out)].slice(0,4);
+  return [...new Set(out.filter(Boolean))].slice(0,2);
 }
 const chatOpen = p => !!(p && p.chat_topic && p.chat_until && new Date(p.chat_until) > new Date());
 const cleanPhone = v => { const t=String(v||"").trim(), d=t.replace(/\D/g,""); return d.length>=7&&d.length<=15 ? (t.startsWith("+")?"+":"")+d : ""; };
