@@ -1,6 +1,6 @@
 // WearAbout service worker: keeps the app shell available offline and fast to open.
 // Network first, so a new deploy shows up on the next open; the cache is only a fallback.
-const CACHE = "wearabout-v7";
+const CACHE = "wearabout-v8";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "faces.js", "config.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/apple-touch-icon.png"];
 
@@ -37,7 +37,7 @@ self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const target = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope).href;
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-    for (const c of list) { if ("focus" in c) { c.postMessage({ go: new URL(target).searchParams.get("go") }); return c.focus(); } }
+    for (const c of list) { if ("focus" in c) { c.postMessage({ go: new URL(target).searchParams.get("go"), post: new URL(target).searchParams.get("post") }); return c.focus(); } }
     return self.clients.openWindow(target);
   }));
 });

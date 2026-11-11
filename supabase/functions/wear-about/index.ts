@@ -337,6 +337,24 @@ async function handleNotify(admin: any, body: any) {
     sender = rec.user_id; recipients = [rec.friend_id]; kind = "friend";
     const { data: p } = await admin.from("profiles").select("handle").eq("id", sender).maybeSingle();
     msg = { title: "New friend on WearAbout", body: `You and ${p?.handle || "a friend"} are now friends 💛`, url: "./?go=friends" };
+  } else if (body.table === "piece_asks" && rec.id) {
+    // "Love this piece?": a new ask tells the poster; an answer tells the person who asked.
+    const { data: a } = await admin.from("piece_asks").select("id,post_id,piece,asker,created_at,answered_at,answer_brand,answer_public").eq("id", rec.id).maybeSingle();
+    if (!a) return json(200, { ok: true });
+    const { data: post } = await admin.from("posts").select("id,user_id,pieces").eq("id", a.post_id).maybeSingle();
+    if (!post) return json(200, { ok: true });
+    const label = String(((post.pieces ?? []) as any[])[a.piece]?.label || "piece").toLowerCase();
+    if (a.answered_at) {
+      if (!recent(a.answered_at)) return json(200, { ok: true });
+      sender = post.user_id; recipients = [a.asker]; kind = "answer";
+      const { data: p } = await admin.from("profiles").select("handle").eq("id", sender).maybeSingle();
+      msg = { title: `${p?.handle || "Your friend"} answered 💛`, body: `Their ${label}: ${a.answer_brand || "tap to see"}`, url: `./?go=feed&post=${post.id}` };
+    } else {
+      if (!recent(a.created_at)) return json(200, { ok: true });
+      sender = a.asker; recipients = [post.user_id]; kind = "ask";
+      const { data: p } = await admin.from("profiles").select("handle").eq("id", sender).maybeSingle();
+      msg = { title: `${p?.handle || "A friend"} loves your ${label} 👀`, body: "Tap to tell them where it's from.", url: `./?go=feed&post=${post.id}` };
+    }
   } else if (body.table === "reports" && rec.id) {
     // A new report: tell every moderator right away (no daily limit, no off switch).
     const { data: r } = await admin.from("reports").select("id,reason,created_at").eq("id", rec.id).maybeSingle();
@@ -353,8 +371,10 @@ async function handleNotify(admin: any, body: any) {
 
   if (!recipients.length) return json(200, { ok: true });
   // Respect each person's switches.
-  const { data: prefs } = await admin.from("user_settings").select(`user_id,${kind === "post" ? "notify_posts" : "notify_friends"}`).in("user_id", recipients);
-  const off = new Set((prefs ?? []).filter((r: Record<string, unknown>) => r[kind === "post" ? "notify_posts" : "notify_friends"] === false).map((r: { user_id: string }) => r.user_id));
+  // Asks and answers follow the "Friend posts" switch.
+  const prefCol = kind === "friend" ? "notify_friends" : "notify_posts";
+  const { data: prefs } = await admin.from("user_settings").select(`user_id,${prefCol}`).in("user_id", recipients);
+  const off = new Set((prefs ?? []).filter((r: Record<string, unknown>) => r[prefCol] === false).map((r: { user_id: string }) => r.user_id));
   recipients = recipients.filter((id) => !off.has(id));
   if (!recipients.length) return json(200, { ok: true });
   // One per friend, per kind, per day: only the rows that are new get a notification.
