@@ -661,3 +661,8 @@ button.mb{width:100%;border:0;background:none;font:inherit;color:inherit;text-al
 .pcnote{font-size:13px;font-style:italic;color:var(--muted)}
 .anthumb{width:56px;height:56px;border-radius:12px;object-fit:cover;flex:none}
 .answersheet{display:flex;flex-direction:column;gap:12px}
+/* 👀 on the photo: tap to see the pieces */
+.post .photo-wrap{position:relative}
+.eyesov{position:absolute;top:12px;right:12px;width:48px;height:48px;border-radius:50%;border:0;background:rgba(255,255,255,.88);box-shadow:0 4px 14px rgba(0,0,0,.18);font-size:24px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.eyesov .pcount{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+@media (max-width:640px){ .eyesov{right:max(16px,env(safe-area-inset-right,0px))} }

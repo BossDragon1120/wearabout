@@ -877,7 +877,8 @@ function viewFeed(){
     out+=`<article class="post" data-key="post-${esc(p.id)}"><div class="head">${avatar(p.user_id)}
       <div class="headtext"><b>${esc(name)}</b><span class="small muted">${esc(ago(p.created_at))}</span></div><span class="spacer"></span><span class="cpill">${CAT_EMOJI[p.category]||""} ${esc(p.category)}</span></div>
       ${p.caption||p.detail?`<p class="hook ${S.hookOpen&&S.hookOpen.has(p.id)?"open":""}" data-act="hookMore" data-id="${esc(p.id)}">${esc(p.caption||p.detail)}</p>`:""}
-      <div class="photo-wrap" ${S.asksReady&&(p.pieces||[]).length?`data-act="postOpen" data-id="${esc(p.id)}" data-kind="pieces" role="button" aria-label="See the pieces in this outfit"`:""}><img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy"></div>
+      <div class="photo-wrap" ${S.asksReady&&(p.pieces||[]).length?`data-act="postOpen" data-id="${esc(p.id)}" data-kind="pieces" role="button" aria-label="See the pieces in this outfit"`:""}><img class="main" src="${esc(url("posts",p.image_path))}" alt="${esc(name)}'s ${esc(p.category)} fit" loading="lazy">${S.asksReady&&(p.pieces||[]).length?(()=>{ const w=p.user_id===S.uid?unansweredAsks(p.id).length:0;
+        return `<button class="eyesov" data-act="postOpen" data-id="${esc(p.id)}" data-kind="pieces" aria-label="${w?w+" friends asked about your pieces":"See the pieces"}"><span aria-hidden="true">👀</span>${w?`<span class="pcount">${w}</span>`:""}</button>`; })():""}</div>
       ${postActions(p,h)}
       </article>`;
   }
