@@ -935,7 +935,8 @@ function piecesPanel(p){
       if(a&&a.answered_at) act=`<a class="pcact shop" href="${esc(google([a.answer_brand,q.label].filter(Boolean).join(" ")))}" target="_blank" rel="noopener noreferrer">${a.answer_brand?esc(a.answer_brand)+" · ":""}Shop it ↗</a>${a.answer_note?`<span class="pcnote">“${esc(a.answer_note)}”</span>`:""}`;
       else if(a) act=`<span class="pcact done">Asked ✓</span>`;
       else if(allow) act=`<button class="pcact primary" data-act="askPiece" data-id="${esc(p.id)}" data-i="${i}">💜 Where's it from?</button>`; }
-    return `<div class="pcard">${img?`<img src="${esc(img)}" alt="" loading="lazy">`:`<span class="pcnoimg" aria-hidden="true">👕</span>`}<span class="pclabel">${esc(q.label)}</span>${act}</div>`;
+    // A piece the poster plugged (or answered publicly) gets a gold outline and a 💛 badge.
+    return `<div class="pcard ${pub?"plugged":""}">${pub?`<span class="pcfave">💛 Fave</span>`:""}${img?`<img src="${esc(img)}" alt="" loading="lazy">`:`<span class="pcnoimg" aria-hidden="true">👕</span>`}<span class="pclabel">${esc(q.label)}</span>${act}</div>`;
   }).join("");
   const hint=mine?"Friends can tap a piece to ask where it's from.":allow?`Love something ${who} is wearing? Ask where it's from.`:`The pieces in ${who}'s outfit.`;
   return `<div class="ppanel"><p class="small muted" style="margin:0 0 8px">${hint}</p><div class="pgrid">${cards}</div></div>`;
