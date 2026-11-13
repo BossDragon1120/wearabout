@@ -411,7 +411,7 @@ function goalRow(){
 /* --- getting people to the first fit and the first post (no names: people may not set a real one) --- */
 // Home headline, a different one each day.
 const HOME_LINES = ["Fit check! What’s the look today?","Okay, show us the fit 👀","Today’s fit, please ✨"];
-const FIRST_FIT_LINES = ["What are you wearing today? Show us.","Don’t be shy. Flaunt it.","Mirror selfie? Perfect. That’s all it takes.","Day one of your streak is one photo away."];
+const FIRST_FIT_LINES = ["Don’t be shy. Flaunt it.","Mirror selfie? Perfect. That’s all it takes.","Day one of your streak is one photo away."];
 const pick = (list, key) => list[(S.pickSeed ?? (S.pickSeed=Math.floor(Math.random()*1000)) ) % list.length];
 function firstPostLine(){
   const friendPosted=S.posts.some(p=>p.user_id!==S.uid);
