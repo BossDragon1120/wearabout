@@ -69,7 +69,7 @@ const S = { imgOk:{}, imgLoading:{},
   urls:{},
   view:"home", filter:{cat:null,best:false},
   flow:null, fitId:null, share:null, confirmDel:false, friendMsg:"", codeIn:"", handleIn:null, goal:"", goalEdit:false, goalIn:null, buyRecs:true, ideasFilter:"all",
-  closet:[], closetReady:false, closetSort:"most", itemId:null, itemEdit:null, mergeAsk:null, confirmRemove:false, fitBack:"home",
+  closet:[], closetReady:false, closetSort:"most", closetLayout:(()=>{ try{ return localStorage.getItem("wa_closet_layout")||"rack"; }catch{ return "rack"; } })(), rackMenu:null, rackAdd:false, itemId:null, itemEdit:null, mergeAsk:null, confirmRemove:false, fitBack:"home",
   auth:{step:"email", email:"", code:"", busy:false, msg:""},
 };
 
@@ -1691,6 +1691,65 @@ function dominantColor(img,x,y,w,h,hint){
   return cols[0].hex;
 }
 function shortDay(ds){ if(!ds) return ""; const [y,m,d]=ds.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString(undefined,{month:"short",day:"numeric"}); }
+
+/* --- Closet as a closet: a row (rail) per kind of piece, swipe left and right through each row --- */
+// Rows people can add. Group rows match a type; finer rows match words in the piece's name; a few rows are about wear.
+const RACK_ROWS = [
+  ...CLOSET_GROUPS.map(([title,types])=>({id:"g:"+title, title, types})),
+  {id:"k:tees", title:"Tees", types:["top"], words:["tee","t-shirt","tshirt"]},
+  {id:"k:sweaters", title:"Sweaters", types:["top"], words:["sweater","knit","pullover","jumper","turtleneck","cardigan"]},
+  {id:"k:jeans", title:"Jeans", types:["bottom"], words:["jean","denim"]},
+  {id:"k:pants", title:"Pants", types:["bottom"], words:["trouser","pant","chino","slacks","jogger"]},
+  {id:"k:shorts", title:"Shorts", types:["bottom"], words:["short"]},
+  {id:"k:skirts", title:"Skirts", types:["bottom"], words:["skirt"]},
+  {id:"k:blazers", title:"Blazers", types:["jacket","outerwear"], words:["blazer"]},
+  {id:"k:sneakers", title:"Sneakers", types:["shoes"], words:["sneaker","trainer"]},
+  {id:"k:sandals", title:"Sandals", types:["shoes"], words:["sandal","slide"]},
+  {id:"k:boots", title:"Boots", types:["shoes"], words:["boot"]},
+  {id:"k:heels", title:"Heels", types:["shoes"], words:["heel","pump","stiletto","mule"]},
+  {id:"w:most", title:"Most worn", special:"most"},
+  {id:"w:lately", title:"Not worn lately", special:"lately"},
+  {id:"w:new", title:"Newest", special:"new"},
+];
+const rackKey=()=>"wa_rack_"+S.uid;
+function rackRows(live){
+  let ids=null; try{ ids=JSON.parse(localStorage.getItem(rackKey())||"null"); }catch{}
+  if(!Array.isArray(ids)){   // first time: a row for each kind of piece you have
+    ids=RACK_ROWS.filter(r=>r.types && r.id.startsWith("g:") && live.some(c=>rowHas(r,c))).map(r=>r.id);
+  }
+  return ids.map(id=>RACK_ROWS.find(r=>r.id===id)).filter(Boolean);
+}
+function rackSave(ids){ try{ localStorage.setItem(rackKey(), JSON.stringify(ids)); }catch{} }
+function rowHas(r,c){
+  const type=ITEM_TYPES.includes(c.type)?c.type:"other";
+  if(!r.types.includes(type)) return false;
+  if(!r.words) return true;
+  const name=" "+normLabel(c.label)+" "; return r.words.some(w=>name.includes(w));
+}
+function rowPieces(r, sorted, st){
+  if(r.special==="most") return [...sorted].sort((a,b)=>st[b.id].count-st[a.id].count).slice(0,15);
+  if(r.special==="new") return [...sorted].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,15);
+  if(r.special==="lately"){ const cut=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+    return sorted.filter(c=>String(st[c.id].last)<cut).sort((a,b)=>String(st[a.id].last).localeCompare(String(st[b.id].last))); }
+  return sorted.filter(c=>rowHas(r,c));
+}
+function viewRack(sorted, st){
+  const rows=rackRows(sorted), ids=rows.map(r=>r.id);
+  let out=`<p class="small muted">Swipe a row to browse. Tap a piece to edit, merge or remove it.</p>`;
+  if(!rows.length) out+=`<div class="empty"><b>No rows yet</b><p class="small muted">Add a row to hang your pieces.</p></div>`;
+  rows.forEach((r,i)=>{
+    const items=rowPieces(r, sorted, st), menu=S.rackMenu===r.id;
+    out+=`<section class="rack" data-key="rack-${esc(r.id)}"><div class="rackhd"><h3>${esc(r.title)} <span class="muted">${items.length}</span></h3>
+      <button class="rackmore" data-act="rackMenu" data-row="${esc(r.id)}" aria-expanded="${menu}" aria-label="Options for ${esc(r.title)}">${ICON.more}</button></div>
+      ${menu?`<div class="rackmenu"><button class="chip" data-act="rackMove" data-row="${esc(r.id)}" data-d="-1" ${i===0?"disabled":""}>↑ Move up</button><button class="chip" data-act="rackMove" data-row="${esc(r.id)}" data-d="1" ${i===rows.length-1?"disabled":""}>↓ Move down</button><button class="chip danger" data-act="rackRemove" data-row="${esc(r.id)}">Remove row</button></div>`:""}
+      <div class="rail" data-key="rail-${esc(r.id)}">${items.length?items.map(c=>{ const e=st[c.id]; return `<button class="rtile" data-act="openItem" data-id="${esc(c.id)}">${pieceThumb(c,e)}<b>${esc(c.label)}</b><span class="small muted">Worn ${e.count}×</span></button>`; }).join(""):`<p class="small muted railempty">Nothing here yet. New fits fill it in.</p>`}</div></section>`;
+  });
+  const avail=RACK_ROWS.filter(r=>!ids.includes(r.id));
+  if(S.rackAdd) out+=`<div class="rackadd"><div class="row" style="justify-content:space-between;align-items:center"><b>Add a row</b><button class="link small" data-act="rackAddToggle">Done</button></div>
+    <div class="chips">${avail.map(r=>{ const n=rowPieces(r, sorted, st).length; return `<button class="chip" data-act="rackAdd" data-row="${esc(r.id)}">+ ${esc(r.title)}${n?` <span class="muted">${n}</span>`:""}</button>`; }).join("")||`<span class="small muted">Every row is already showing.</span>`}</div></div>`;
+  else out+=`<button class="btn block addrow" data-act="rackAddToggle">+ Add a row</button>`;
+  return out;
+}
 function viewCloset(){
   if(!S.closetReady) return `<div class="stack"><h2>Closet</h2><div class="note">The Closet needs one quick database update. Run <b>002_closet.sql</b> in Supabase's SQL Editor, then reopen the app.</div></div>`;
   const st=closetStats(), live=S.closet.filter(c=>st[c.id]);
@@ -1701,12 +1760,13 @@ function viewCloset(){
   };
   if(S.closetSort==="smart"){ const keys=new Map(live.map(c=>[c.id,smartKey(c)])); sorters.smart=(a,b)=>cmpKeys(keys.get(a.id),keys.get(b.id))||sorters.most(a,b); }
   const sorted=[...live].sort(sorters[S.closetSort]||sorters.most);
-  let out=`<div class="stack"><div class="countrow" style="margin-top:0"><span class="count">${live.length}</span><span class="countlbl">Piece${live.length===1?"":"s"} in your closet</span></div>
+  let out=`<div class="stack"><div class="countrow" style="margin-top:0"><span class="count">${live.length}</span><span class="countlbl">Piece${live.length===1?"":"s"} in your closet</span>${S.loaded&&live.length?`<div class="seg layoutseg" role="group" aria-label="Closet layout"><button class="${S.closetLayout!=="list"?"on":""}" data-act="closetLayout" data-l="rack" aria-pressed="${S.closetLayout!=="list"}">Rows</button><button class="${S.closetLayout==="list"?"on":""}" data-act="closetLayout" data-l="list" aria-pressed="${S.closetLayout==="list"}">List</button></div>`:""}</div>
     <p class="small muted" style="margin-top:-6px">Built from your logged fits. Each new fit adds or matches pieces automatically.</p>
     <div class="chips sortrow" role="toolbar" aria-label="Sort">${[["smart","✨ Smart"],["most","Most worn"],["least","Least worn"],["recent","Recent"]].map(([k,l])=>`<button class="chip ${S.closetSort===k?"on":""}" data-act="closetSort" data-sort="${k}" aria-pressed="${S.closetSort===k}">${l}</button>`).join("")}</div>`;
   if(!S.loaded) out+=`<div class="note plain">Loading your closet…</div>`;
-  else if(live.length) out+=`<p class="small muted">Swipe left to remove. Hold a piece and drag it onto its twin to merge.</p>`;
-  if(S.loaded && !live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;
+  else if(live.length && S.closetLayout==="list") out+=`<p class="small muted">Swipe left to remove. Hold a piece and drag it onto its twin to merge.</p>`;
+  if(S.loaded && live.length && S.closetLayout!=="list") out+=viewRack(sorted, st);
+  else if(S.loaded && !live.length) out+=`<div class="empty"><b>Your closet fills itself</b><p class="small muted">Log a fit and every piece WearAbout spots (except jewelry) shows up here, with how often you wear it.</p></div>`;
   else for(const [title,types] of CLOSET_GROUPS){
     const group=sorted.filter(c=>types.includes(ITEM_TYPES.includes(c.type)?c.type:"other")); if(!group.length) continue;
     out+=`<section class="cgroup"><h3>${title} · ${group.length}</h3>${group.map(c=>{ const e=st[c.id]; return `<div class="swipe" data-key="piece-${esc(c.id)}"><button class="swipe-del" data-act="swipeRemove" data-id="${esc(c.id)}" tabindex="-1">Remove</button><button class="citem" data-act="openItem" data-id="${esc(c.id)}">
@@ -1986,6 +2046,13 @@ const ACT = {
       const { error } = await sb.from("fits").update({items:x.items}).eq("id",x.id); if(error) throw error; render(); toast("Added to closet"); }
     catch(e){ console.error(e); toast("Couldn't add it. Try again."); } },
   closetSort:t=>{ S.closetSort=t.dataset.sort; render(); },
+  closetLayout:t=>{ S.closetLayout=t.dataset.l; try{ localStorage.setItem("wa_closet_layout", S.closetLayout); }catch{} S.rackMenu=null; S.rackAdd=false; render(); },
+  rackMenu:t=>{ S.rackMenu=S.rackMenu===t.dataset.row?null:t.dataset.row; render(); },
+  rackMove:t=>{ const ids=rackRows(S.closet).map(r=>r.id), i=ids.indexOf(t.dataset.row), j=i+Number(t.dataset.d); if(i<0||j<0||j>=ids.length) return;
+    [ids[i],ids[j]]=[ids[j],ids[i]]; rackSave(ids); render(); },
+  rackRemove:t=>{ rackSave(rackRows(S.closet).map(r=>r.id).filter(id=>id!==t.dataset.row)); S.rackMenu=null; render(); toast("Row removed. Add it back any time."); },
+  rackAddToggle:()=>{ S.rackAdd=!S.rackAdd; S.rackMenu=null; render(); },
+  rackAdd:t=>{ const ids=rackRows(S.closet).map(r=>r.id); if(!ids.includes(t.dataset.row)) ids.push(t.dataset.row); rackSave(ids); render(); },
   openItem:t=>{ S.itemId=t.dataset.id; S.itemEdit=null; S.mergeAll=false; S.mergeAsk=null; S.moreColors=false; S.avatarEdit=null; S.confirmRemove=false; S.view="item"; render(); scrollTo(0,0); },
   saveItem:()=>saveClosetItem(),
   mergeAsk:t=>{ S.mergeAsk={from:t.dataset.from, to:t.dataset.to, keep:t.dataset.to}; render(); },
