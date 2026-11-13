@@ -482,7 +482,7 @@ function viewHome(){
   const flash = S.homeFlash && Date.now()<S.homeFlash.until ? S.homeFlash.text : null;
   // The hero: a big question and a big button. Its words change with your day.
   const kicker = st.n ? `🔥 ${st.n}-day streak` : "Start your streak";
-  const headline = st.loggedToday ? "Today’s fit is in ✓" : st.n ? "What are you wearing today?" : "Show us today’s look";
+  const headline = st.loggedToday ? "Today’s fit is in ✓" : st.n ? "Fit check! What’s the look today?" : "Show us today’s look";
   const sub = flash || (st.loggedToday ? "Changed outfits? Add another anytime." : st.n ? "Log it to keep your streak going." : "One photo starts your streak.");
   if(needsIntro()) return introCards();
   if(needsSetup()) return setupCard();
