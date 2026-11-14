@@ -1115,6 +1115,9 @@ function viewFriends(){
   return `<div class="stack"><div class="row"><h2>Friends</h2><span class="spacer"></span><button class="btn sm primary" data-act="invite" ${p?"":"disabled"}>Invite friends</button></div>
     <button class="merow ${missing?"missing":""}" data-act="nav" data-view="profile">${avatar(S.uid)}<span class="pline"><b>${esc(String(p&&p.handle||"").trim()||"You")}</b><span class="small ${missing?"":"muted"}">${missing?(!String(p&&p.handle||"").trim()?"Add your name and photo":"Add a profile photo"):"Profile, friend code and settings"}</span></span><span class="chev" aria-hidden="true">›</span></button>
     ${incoming.length?`<div class="panel"><h3>Added you</h3>${incoming.map(id=>person(id,"wants to be friends",`<button class="btn sm primary" data-act="addBack" data-uid="${esc(id)}">Add back</button>`)).join("")}</div>`:""}
+    ${(S.suggest||[]).length?`<div class="panel suggs"><h3>People you may know</h3>${S.suggest.slice(0,6).map(x=>person(x.id,
+        x.mutuals>1?`${x.mutuals} friends in common`:`Friends with ${esc(x.via||"a friend")}`,
+        `<button class="btn sm primary" data-act="suggAdd" data-uid="${esc(x.id)}">Add</button><button class="xbtn" data-act="suggHide" data-uid="${esc(x.id)}" aria-label="Not now">×</button>`)).join("")}</div>`:""}
     <div class="panel"><h3>Your friends · ${m.length}</h3>${m.length?m.map(id=>person(id,lastPost(id))).join(""):`<p class="small muted">No friends yet. Tap <b>Invite friends</b>: when they sign up from your link, you're friends right away.</p>`}</div>
     ${pending.length?`<div class="panel"><h3>Waiting on them</h3>${pending.map(id=>person(id,"hasn't added you back")).join("")}</div>`:""}
     <div class="panel"><h3>Add a friend by code</h3>
@@ -1192,6 +1195,7 @@ function privacyPanel(){
     ${S.consentReady?`<div class="prow"><span><b>Photo analysis</b><span class="small muted">${S.aiConsent?`On${S.aiConsentAt?" since "+esc(new Date(S.aiConsentAt).toLocaleDateString()):""}. Fit photos go to Anthropic and Photoroom for your score, closet and backdrops.`:"Off. We'll ask before your next fit."}</span></span>
       ${S.aiConsent?`<button class="link small" data-act="consentWithdraw">Turn off</button>`:""}</div>`:""}
     ${S.asksReady?`<label class="switchrow" for="allowAsksIn"><span><b>Let friends ask about my pieces</b><span class="small muted">Friends can tap a piece in your post and ask where it's from.</span></span><input type="checkbox" id="allowAsksIn" class="switch" role="switch" data-act="allowAsks" ${S.profile&&S.profile.allow_asks===false?"":"checked"}></label>`:""}
+    ${S.suggestReady?`<label class="switchrow" for="suggestMeIn"><span><b>Show me in friend suggestions</b><span class="small muted">Friends of your friends can see your name and photo and add you. Your fits and posts stay friends-only.</span></span><input type="checkbox" id="suggestMeIn" class="switch" role="switch" data-act="suggestMe" ${S.profile&&S.profile.suggest_me===false?"":"checked"}></label>`:""}
     ${S.blocksReady?`<div class="prow"><span><b>Blocked</b><span class="small muted">${blocks.length?"":"No one."}</span></span></div>
       ${blocks.map(b=>`<div class="person"><span class="pline"><b>${esc(b.blocked_name||"Someone")}</b></span><button class="link small" data-act="unblock" data-id="${esc(b.blocked)}">Unblock</button></div>`).join("")}`:""}
     <div class="prow links"><a class="link small" href="support.html" target="_blank" rel="noopener">Help & support</a><a class="link small" href="privacy.html" target="_blank" rel="noopener">Privacy policy</a><a class="link small" href="terms.html" target="_blank" rel="noopener">Terms of use</a></div>
@@ -1514,6 +1518,16 @@ async function saveName(){
   if(error){ setNameStatus("Couldn't save. Check your connection and try again."); return; }
   S.profile={...S.profile,handle}; setNameStatus(handle?"Saved ✓":"Name removed");
   const av=document.querySelector(".avatarbtn .avatar"); if(av && av.tagName==="SPAN") av.outerHTML=avatar(S.uid,"xl");
+}
+/* --- People you may know: friends of your friends (after 013 is run) --- */
+const suggKey=()=>"wa_sugg_hide_"+S.uid;
+function suggHidden(){ try{ return JSON.parse(localStorage.getItem(suggKey())||"[]"); }catch{ return []; } }
+async function loadSuggest(){
+  const r=await sb.rpc("friend_suggestions"); if(r.error){ S.suggestReady=false; S.suggest=[]; return; }
+  S.suggestReady=true; const hide=suggHidden();
+  S.suggest=(r.data||[]).filter(x=>!hide.includes(x.id) && !S.out.has(x.id) && !S.inc.has(x.id));
+  for(const x of S.suggest) S.people[x.id]={...(S.people[x.id]||{}), id:x.id, handle:x.handle, avatar_path:x.avatar_path};
+  if(S.avatarReady) await signUrls("avatars", S.suggest.map(x=>x.avatar_path).filter(Boolean));
 }
 async function addFriend(id){
   const { error } = await sb.from("friendships").insert({friend_id:id});
@@ -2027,7 +2041,7 @@ document.addEventListener("touchend",()=>{
 /* ---------- actions ---------- */
 const ACT = {
   nav:t=>{ S.nameStatus=""; S.nudgeHold=false; S.shareOffer=null; S.homeFlash=null; S.view=t.dataset.view; if(S.view==="feed"){ seenSet("feed"); S.dotFeed=false; } if(S.view==="friends"){ seenSet("friends"); S.dotFriends=false; } if(S.view==="reports") loadReports(); S.share=null; S.flow=null; S.savedMsg=null; S.mergeAsk=null; S.avatarEdit=null; S.confirmDel=false; render(); scrollTo(0,0);
-    if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).catch(()=>{}); },
+    if((S.view==="feed"||S.view==="friends") && Date.now()-(S.socialAt||0)>30e3) loadSocial().then(()=>softRender(["feed","friends"])).then(()=>S.view==="friends"&&loadSuggest()).then(()=>softRender(["friends"])).catch(()=>{}); },
   log:()=>{ if(!S.aiConsent){ S.consentAsk=true; render(); return; } warmFaces(); S.replacing=false; const i=$("#photoIn"); i.value=""; i.click(); },
   consentYes:()=>{ S.aiConsent=true; S.consentAsk=false; S.aiConsentAt=new Date().toISOString(); warmFaces();
     // Open the photo picker right away (it must happen inside the tap), then save the agreement.
@@ -2226,6 +2240,15 @@ const ACT = {
       asksFor(p.id,a.piece).forEach(x=>{ if(!x.answered_at) Object.assign(x,{answered_at:now, answer_brand:brand, answer_note:note, answer_public:pub}); });
       S.answer=null; render(); toast(pub?"Added to your post 💛":"Sent 💛");
     } catch(e){ console.error(e); a.busy=false; render(); toast("Couldn't send that. Try again."); } },
+  suggestMe:async t=>{ const on=t.checked, prev=S.profile.suggest_me; S.profile.suggest_me=on; render();
+    const { error } = await sb.from("profiles").update({suggest_me:on}).eq("id",S.uid);
+    if(error){ S.profile.suggest_me=prev; render(); toast("Couldn't save that. Try again."); } },
+  suggAdd:async t=>{ const id=t.dataset.uid; t.disabled=true;
+    try{ await addFriend(id); S.suggest=(S.suggest||[]).filter(x=>x.id!==id); render();
+      toast(`Sent! Once ${firstName(id)} adds you back, you'll see each other's fits.`); }
+    catch(e){ console.error(e); t.disabled=false; toast("Couldn't add them. Try again."); } },
+  suggHide:t=>{ const id=t.dataset.uid, h=suggHidden(); if(!h.includes(id)) h.push(id); try{ localStorage.setItem(suggKey(), JSON.stringify(h.slice(-200))); }catch{}
+    S.suggest=(S.suggest||[]).filter(x=>x.id!==id); render(); },
   allowAsks:async t=>{ const on=t.checked, prev=S.profile.allow_asks; S.profile.allow_asks=on; render();
     const { error } = await sb.from("profiles").update({allow_asks:on}).eq("id",S.uid);
     if(error){ S.profile.allow_asks=prev; render(); toast("Couldn't save that. Try again."); } },
@@ -2332,7 +2355,7 @@ async function onSession(session){
   try { await loadMine(); } catch(e){ console.error(e); toast("Couldn't load your fits. Close and reopen the app to try again."); }
   S.loaded=true; if(START_VIEW && !S.startedFromLink){ S.startedFromLink=true; S.view=START_VIEW; seenSet(START_VIEW); if(START_POST) openPostPieces(START_POST); } render();
   backfillCloset().then(()=>softRender(["closet","item","fit"])).then(()=>fillCloseups()).catch(console.error);
-  loadSocial().then(()=>acceptInvite()).then(()=>softRender(["feed","friends","home"])).catch(console.error);
+  loadSocial().then(()=>acceptInvite()).then(()=>softRender(["feed","friends","home"])).then(()=>loadSuggest()).then(()=>softRender(["friends"])).catch(console.error);
 }
 async function acceptInvite(){
   const code=pendingInvite(), tok=pendingToken(); if(!(code||tok) || !S.uid) return;
