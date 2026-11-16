@@ -1020,12 +1020,12 @@ function wishSheet(){
   const buys=S.recs.filter(r=>r.kind==="buy"), n=b.sel.size;
   return `<div class="sheetback" data-act="wishClose"></div><div class="sheet wishsheet" role="dialog" aria-label="Share your wishlist">
     <div class="row"><h3 style="margin:0">Share your wishlist</h3><span class="spacer"></span><button class="iconbtn" data-act="wishClose" aria-label="Close">${ICON.x}</button></div>
-    <div class="wishprev">${b.preview?`<img id="wishPrev" src="${b.preview}" alt="Preview of your wishlist card">`:`<div class="wishprev-wait" id="wishPrev">Making your card…</div>`}</div>
+    <div class="wishprev">${!n?`<div class="wishprev-wait" id="wishPrev">Pick the items to share below</div>`:b.preview?`<img id="wishPrev" src="${b.preview}" alt="Preview of your wishlist card">`:`<div class="wishprev-wait" id="wishPrev">Making your card…</div>`}</div>
     <div class="field"><label for="wishNoteIn">Add a note</label>
       <input class="input" id="wishNoteIn" maxlength="60" value="${esc(b.note)}" placeholder="Say something to your friends">
       <div class="chips wishnotes">${WISH_NOTES.map(t=>`<button class="chip ${b.note===t?"on":""}" data-act="wishNote" data-note="${esc(t)}">${esc(t)}</button>`).join("")}</div></div>
-    ${buys.length>1?`<div class="field"><span class="small" style="font-weight:600">What's on it</span><div class="wishpick">${buys.map(r=>`<button class="wishitem ${b.sel.has(r.id)?"on":""}" data-act="wishToggle" data-id="${esc(r.id)}" aria-pressed="${b.sel.has(r.id)}"><span class="wcheck" aria-hidden="true">${b.sel.has(r.id)?"✓":""}</span>${esc(r.title)}</button>`).join("")}</div></div>`:""}
-    <button class="btn primary block lg" data-act="wishSend" ${n?"":"disabled"}>${ICON.share} Share${n>1?` ${n} items`:""}</button></div>`;
+    ${buys.length>1?`<div class="field"><span class="small" style="font-weight:600">Pick what to share</span><div class="wishpick">${buys.map(r=>`<button class="wishitem ${b.sel.has(r.id)?"on":""}" data-act="wishToggle" data-id="${esc(r.id)}" aria-pressed="${b.sel.has(r.id)}"><span class="wcheck" aria-hidden="true">${b.sel.has(r.id)?"✓":""}</span>${esc(r.title)}</button>`).join("")}</div></div>`:""}
+    <button class="btn primary block lg" data-act="wishSend" ${n?"":"disabled"}>${ICON.share} ${n?`Share${n>1?` ${n} items`:""}`:"Pick items to share"}</button></div>`;
 }
 const loadImg=src=>new Promise(res=>{ if(!src) return res(null); const im=new Image(); im.crossOrigin="anonymous"; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; });
 function wrapText(ctx,text,maxW,maxLines){
@@ -1080,6 +1080,7 @@ async function wishCanvas(){
 }
 async function wishPreview(){
   const b=S.buyShare; if(!b) return; const my=(S.wishSeq=(S.wishSeq||0)+1);
+  if(!b.sel.size){ b.preview=""; S.wishSeq++; return; }
   const c=await wishCanvas(); if(my!==S.wishSeq||S.buyShare!==b) return;
   try{ b.preview=c.toDataURL("image/jpeg",.7); }catch{ b.preview=""; }   // a tainted canvas (no image permission) just skips the preview
   const el=$("#wishPrev"); if(el&&el.tagName==="IMG") el.src=b.preview; else render();
@@ -2190,7 +2191,7 @@ const ACT = {
   // Send your saved buys as a plain list with a search link for each, e.g. to a friend or as gift ideas.
   // Share your wishlist as a picture card (plus a short message), after picking items and adding a note.
   shareBuys:()=>{ const buys=S.recs.filter(r=>r.kind==="buy"); if(!buys.length) return;
-    S.buyShare={sel:new Set(buys.map(r=>r.id)), note:"", preview:""}; render(); wishPreview(); },
+    S.buyShare={sel:new Set(buys.length===1?[buys[0].id]:[]), note:"", preview:""}; render(); wishPreview(); },
   installHow:()=>{ S.installHow=true; render(); },
   installClose:()=>{ S.installHow=false; render(); },
   installHide:()=>{ try{ localStorage.setItem("wa_install_hide",String(Date.now())); }catch{} S.installHow=false; render(); },
