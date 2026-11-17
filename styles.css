@@ -701,3 +701,7 @@ button.mb{width:100%;border:0;background:none;font:inherit;color:inherit;text-al
 .xbtn:active{background:var(--chip)}
 .suggs .pline{flex-direction:column;align-items:flex-start;gap:0;max-width:100%}
 .suggs .pline b,.suggs .pline .small{max-width:100%}
+
+/* Adding a fit: keep the occasion screen steady while the guess arrives, and the chips in view on smaller phones */
+.guessline{min-height:1.45em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.photowrap .photo{max-height:46vh}

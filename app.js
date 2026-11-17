@@ -496,7 +496,7 @@ function viewHome(){
       <span class="hero-kicker">${kicker}</span>
       <b class="hero-title">${headline}</b>
       <span class="lb-sub">${sub}</span>
-      <button class="btn primary block lg hero-btn" data-act="log">📸 ${st.loggedToday?"Add another fit":"Add your fit"}</button></div>
+      <button class="btn primary block lg hero-btn" data-act="log" ${S.opening?"disabled":""}>${S.opening?"Opening your photo…":`📸 ${st.loggedToday?"Add another fit":"Add your fit"}`}</button></div>
     ${nudge && !S.nudgeHold ? firstPostCard() : ""}
     ${offer?`<div class="offer"><span>Love this one? Show your friends.</span><button class="btn sm primary" data-act="shareOffer">Share it</button><button class="iconbtn" data-act="dismissOffer" aria-label="Not now">${ICON.x}</button></div>`:""}
     <div class="countrow"><span class="count">${S.fits.length}</span><span class="countlbl">Outfit${S.fits.length===1?"":"s"} logged</span></div>
@@ -522,7 +522,7 @@ function viewFlow(){
     out+=`<div class="stack">
       <div class="photowrap"><img class="photo" src="${f.origUrl}" alt="Your outfit photo"><button class="changephoto" data-act="changePhoto" aria-label="Change photo"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 21v-5h-5"/></svg>Change</button></div>
       <div class="stack" style="gap:8px"><h2>What's it for?</h2>
-        <p class="small muted">${f.guessing?"Reading your outfit…":f.guess?`Best guess: <b>${esc(f.guess)}</b>${f.guessConf==="low"?" (not sure)":""}. Tap another if it's wrong.`:f.guessErr?esc(f.guessErr)+" Pick one below.":"Pick the occasion."}</p></div>
+        <p class="small muted guessline">${f.guessing?"Reading your outfit…":f.guess?`${f.guessConf==="low"?"Maybe":"Looks like"} <b>${esc(f.guess)}</b>. Tap to change.`:f.guessErr?"Couldn't tell. Pick one below.":"Pick the occasion."}</p></div>
       <div class="chipgrid">${CATS.map(c=>`<button class="chip ${f.cat===c?"on":""} ${f.guess===c&&f.cat!==c?"guess":""}" data-act="pickCat" data-cat="${esc(c)}">${CAT_EMOJI[c]} ${esc(c)}</button>`).join("")}</div>
       <div class="field"><label for="detail">Caption (optional)</label>
         <input class="input" id="detail" maxlength="60" placeholder="Where you're headed: Fleet Week, dinner date…" value="${esc(f.detail)}">
@@ -588,7 +588,9 @@ async function startFlow(file){
   // "Change photo" on the occasion step: keep the occasion you picked yourself, your details and the backdrop choice.
   const prev = S.replacing && S.flow && S.flow.step==="occasion" ? S.flow : null; S.replacing=false;
   if(!file) return;
-  let img; try { img=await blobImage(file); } catch { toast("That file isn't a photo WearAbout can read."); return; }
+  // Big phone photos take a moment to read: show it on the button so the tap clearly worked.
+  if(!prev){ S.opening=true; softRender(["home"]); }
+  let img; try { img=await blobImage(file); } catch { S.opening=false; render(); toast("That file isn't a photo WearAbout can read."); return; }
   // The original stays on the phone and in your private storage. The copies sent to the AI services have faces covered.
   const origCanvas=scaled(img,1600), origBlob=await toBlob(origCanvas,"image/jpeg",.88), origUrl=URL.createObjectURL(origBlob);
   if(S.flow && S.flow.origUrl) URL.revokeObjectURL(S.flow.origUrl);
@@ -604,7 +606,7 @@ async function startFlow(file){
     f.guessB64=await base64(await toBlob(scaled(safe,800),"image/jpeg",.8));
     f.isReady=true;
   })();
-  S.flow=f; S.view="flow"; render(); scrollTo(0,0);
+  S.opening=false; S.flow=f; S.view="flow"; render(); scrollTo(0,0);
   try {
     await f.ready;
     const r=await callFn("wear-about",{action:"guess", image:f.guessB64});
