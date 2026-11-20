@@ -34,6 +34,52 @@ const CATS = ["Casual/Hangout", "Errands", "Office", "WFH", "Active/Workout", "N
 const DIMS: [string, number][] = [["occasion_fit", .30], ["cohesion", .20], ["proportion", .20], ["color", .20], ["details", .10]];
 // With a personal style goal, the goal takes 10%: 5 points from occasion fit and 5 from color.
 const DIMS_GOAL: [string, number][] = [["occasion_fit", .25], ["cohesion", .20], ["proportion", .20], ["color", .15], ["details", .10], ["goal", .10]];
+// The stylist checklist. The AI answers each check yes (1) or no (0); the app turns the checks into scores.
+// Yes/no checks are steadier than asking an AI for a number on a scale, and every "no" points at a concrete fix.
+const RUBRIC = (cat: string, goal: string): Record<string, string[]> => ({
+  occasion_fit: [
+    `The level of dressiness suits ${cat}`,
+    `The shoes suit the setting (walkable, weather and venue appropriate)`,
+    `The outfit is practical for ${cat} (movement, weather, carrying things)`,
+    `Nothing looks out of place for ${cat}`,
+    `At least one piece suits ${cat} especially well`,
+  ],
+  cohesion: [
+    "The pieces share a mood (all relaxed, all polished, etc.), or the mix clearly looks on purpose",
+    "There is a clear focal point: one standout piece or idea",
+    "The fabrics and textures work together",
+    "No piece looks like an afterthought",
+    "At a glance it reads as one intentional outfit",
+  ],
+  proportion: [
+    "The silhouette has a clear shape: a defined waist, tuck or belt, or a deliberately relaxed line",
+    "Lengths relate well (top or jacket against the bottom)",
+    "Volumes balance (loose with fitted), or an all-over volume looks deliberate",
+    "The garments fit well: shoulders, sleeves and waist sit right",
+    "Trouser or skirt hems land well with the shoes",
+  ],
+  color: [
+    "There is a clear main color or palette",
+    "The colors relate (repeated, tonal or complementary) instead of competing",
+    "The shoes and/or bag tie into the palette",
+    "Any print or bold color looks deliberate",
+    `The colors suit ${cat} and the season`,
+  ],
+  details: [
+    "There is at least one accessory (bag, belt, hat, scarf, sunglasses or jewelry)",
+    "The shoes look chosen for this outfit",
+    "The accessories match the outfit's level of dressiness",
+    "The garments look cared for (no obvious wrinkles, pilling or stains)",
+    "A styling touch adds interest (a cuff, roll, half-tuck, layer or texture)",
+  ],
+  ...(goal ? { goal: [
+    `The outfit moves toward the style goal "${goal}"`,
+    `At least one piece clearly signals "${goal}"`,
+    `Nothing in the outfit works against "${goal}"`,
+  ] } : {}),
+});
+// A dimension's score from its checks: none passed = 3, all passed = 10 (kind floor, honest top).
+const fromChecks = (c: number[]) => 3 + 7 * c.reduce((a, b) => a + b, 0) / c.length;
 const BADGES = ["Nailed the occasion", "Color play", "Great proportions", "Texture mix", "Statement piece", "Polished details", "Tonal dressing", "Pattern mixing", "On goal"];
 const badgeNames = (goal: string) => BADGES.filter((n) => goal || n !== "On goal");
 const ITEM_TYPES = ["top", "bottom", "dress", "jacket", "outerwear", "shoes", "bag", "accessory", "belt", "hat", "scarf", "eyewear", "other"];
@@ -60,15 +106,11 @@ Rules you must follow:
    Be kind and helpful: frame everything as making a good look even better. Kind does not mean inflated: score honestly.
 3. Help, don't sell. ${buy ? `Always give exactly one purchase idea: the single kind of item that would most improve this outfit for this occasion. Keep it practical and versatile, never a brand you made up.` : `The user has turned off purchase recommendations. Do not suggest buying anything; set "buy" to null.`}
 
-Score each dimension from 1 to 10 (one decimal allowed), with a note of at most 14 words:
-- occasion_fit: right formality and practicality for ${cat}
-- cohesion: the pieces read as one intentional look
-- proportion: the garments' silhouettes, lengths and volumes balance with each other; pieces are cut and sized well
-- color: the colors of the pieces work together
-- details: accessories, shoes, and finishing touches like tucks, rolls, layers and polish
-${goal ? `- goal: how well the outfit moves toward the user's own style goal, "${goal}"
-` : ""}
-"tweak": one change using things they likely already own (styling, tucking, cuffing, swapping a piece, layering, hair). It must improve the lowest-scoring dimension. "title" at most 8 words, "detail" at most 30 words, "dimension" is that dimension's key.
+Go through this stylist checklist. For every check answer 1 (yes, clearly true in the photo) or 0 (no, or you can't tell). Judge each check on its own; don't let one strong piece lift every answer. Be fair, not generous: a typical good everyday outfit passes about two thirds of the checks.
+${Object.entries(RUBRIC(cat, goal)).map(([k, list]) => `${k}:\n${list.map((c, i) => `  ${i + 1}. ${c}`).join("\n")}`).join("\n")}
+For each dimension also write a note of at most 14 words: what works, and the most useful thing a "0" points to.
+
+"tweak": one change using things they likely already own (styling, tucking, cuffing, swapping a piece, layering, hair). It must turn one of the "0" checks into a "1", preferably in the dimension with the fewest checks passed. "title" at most 8 words, "detail" at most 30 words, "dimension" is that dimension's key.
 ${buy ? `"buy": {"item": the kind of item, described specifically without inventing a brand, "why": at most 25 words, "search": a 3-7 word Google search for it}.` : `"buy": null.`}
 "review": one or two warm, specific sentences on what works.
 "badges": 0 to 3 badges from this exact list, only when clearly earned (many outfits earn none): ${badgeNames(goal).join(", ")}.${goal ? ` "On goal" means the outfit clearly delivers on "${goal}".` : ""}
@@ -76,7 +118,7 @@ ${buy ? `"buy": {"item": the kind of item, described specifically without invent
 If no outfit is visible, reply {"error":"<short reason>"} instead.${closet}
 
 Reply with only JSON in this shape:
-{"dims":{"occasion_fit":{"score":8,"note":"..."},"cohesion":{"score":7.5,"note":"..."},"proportion":{"score":7,"note":"..."},"color":{"score":8,"note":"..."},"details":{"score":6.5,"note":"..."}${goal ? ',"goal":{"score":7,"note":"..."}' : ""}},"review":"...","badges":[],"tweak":{"title":"...","detail":"...","dimension":"details"},"buy":${buy ? '{"item":"...","why":"...","search":"..."}' : "null"},"items":[{"label":"...","type":"top","brand":null,"clear":true,"box":[0.3,0.2,0.7,0.55]${closet ? ',"match":null' : ""}}]}`;
+{"dims":{"occasion_fit":{"checks":[1,1,1,0,1],"note":"..."},"cohesion":{"checks":[1,1,0,1,1],"note":"..."},"proportion":{"checks":[1,0,1,1,1],"note":"..."},"color":{"checks":[1,1,0,1,1],"note":"..."},"details":{"checks":[0,1,1,1,0],"note":"..."}${goal ? ',"goal":{"checks":[1,0,1],"note":"..."}' : ""}},"review":"...","badges":[],"tweak":{"title":"...","detail":"...","dimension":"details"},"buy":${buy ? '{"item":"...","why":"...","search":"..."}' : "null"},"items":[{"label":"...","type":"top","brand":null,"clear":true,"box":[0.3,0.2,0.7,0.55]${closet ? ',"match":null' : ""}}]}`;
 
 function parseJson(text: string) {
   try { return JSON.parse(text); } catch { /* fall through */ }
@@ -104,12 +146,14 @@ function cleanBox(b: unknown): number[] | null {
 // deno-lint-ignore no-explicit-any
 function normalize(a: any, goal: string, refMap: Record<string, string> = {}, buyOn = true) {
   if (!a || typeof a !== "object" || a.error || !a.dims) throw new Error(a?.error ? String(a.error) : "No outfit found");
-  const dims: Record<string, { score: number; note: string }> = {};
+  const dims: Record<string, { score: number; note: string; passed?: number; of?: number }> = {};
   let total = 0, low = "";
   for (const [k, w] of (goal ? DIMS_GOAL : DIMS)) {
-    const d = a.dims[k] ?? {};
-    const sc = clamp(Number(d.score) || 5, 1, 10);
-    dims[k] = { score: round1(sc), note: String(d.note ?? "").slice(0, 160) };
+    const d = a.dims[k] ?? {}, want = RUBRIC("", goal)[k].length;
+    const checks = Array.isArray(d.checks) ? d.checks.slice(0, want).map((x: unknown) => (x === 1 || x === true || x === "1") ? 1 : 0) : null;
+    // Checklist answers give the score; an old-style number is only a fallback.
+    const sc = checks && checks.length === want ? fromChecks(checks) : clamp(Number(d.score) || 5, 1, 10);
+    dims[k] = { score: round1(sc), note: String(d.note ?? "").slice(0, 160), ...(checks && checks.length === want ? { passed: checks.reduce((x: number, y: number) => x + y, 0), of: want } : {}) };
     total += sc * w;
     if (!low || sc < dims[low].score) low = k;
   }

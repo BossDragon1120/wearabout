@@ -571,7 +571,7 @@ function scoreBlock(an, score, cat, fb, recAct){
     <div class="dimswrap" role="list">
       <div class="minibars">${dims.map(([k,label,w])=>{ const d=an.dims[k], open=S.dimOpen===k;
         return `<div class="mbwrap ${open?"open":""}" role="listitem"><button class="mb ${k===low?"low":""}" data-act="dimOpen" data-k="${esc(k)}" aria-expanded="${open}"><span class="ml">${esc(k==="goal"?"Your goal":short(label))}</span><span class="mbar"><i style="width:${d.score*10}%"></i></span><span class="mv">${Number(d.score).toFixed(1)}</span><span class="mchev" aria-hidden="true">›</span></button>
-          ${open?`<div class="mnote"><p class="small">${esc(d.note||"No notes for this one.")}</p><span class="muted small">${k==="goal"?`Toward ${esc(an.goal)} · `:""}${Math.round(w*100)}% of your score</span></div>`:""}</div>`; }).join("")}</div>
+          ${open?`<div class="mnote"><p class="small">${esc(d.note||"No notes for this one.")}</p><span class="muted small">${k==="goal"?`Toward ${esc(an.goal)} · `:""}${d.of?`${d.passed} of ${d.of} stylist checks · `:""}${Math.round(w*100)}% of your score</span></div>`:""}</div>`; }).join("")}</div>
       <div class="mfoot"><span class="small muted">${low?`Room to grow: <b>${esc(name(low))}</b>`:best?`Strongest: <b>${esc(name(best))}</b>`:""}</span>${S.dimOpen?"":`<span class="small muted">Tap one for notes</span>`}</div></div>
     <div class="stack" style="gap:12px"><h3>Level it up</h3>
       ${an.tweak?recCard("tweak","Tweak",an.tweak.title,an.tweak.detail,fb.tweak,recAct):""}
